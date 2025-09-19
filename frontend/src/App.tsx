@@ -7,6 +7,7 @@ import RootCauseAnalysisComponent from './components/RootCauseAnalysis';
 import InsightsPanel from './components/InsightsPanel';
 import LeftSidebar from './components/LeftSidebar';
 import RightNotesPanel from './components/RightNotesPanel';
+import SummaryTile from './components/SummaryTile';
 import { DashboardData } from './types';
 import { uploadFile, getHealth } from './services/api';
 
@@ -210,63 +211,20 @@ const App: React.FC = () => {
           ) : (
             // Dashboard Section
             <div className="space-y-8">
-              {/* Enhanced Summary */}
-              <div className="bg-white rounded-lg shadow-sm border p-6">
-                <h2 className="text-xl font-semibold text-gray-800 mb-6">Financial Analysis Summary</h2>
-                
-                {/* Basic Info */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mb-8 pb-6 border-b border-gray-200">
-                  <div>
+              {/* Basic Info */}
+              <div className="bg-white rounded-lg shadow-sm border p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div className="flex items-center justify-center py-2">
                     <span className="text-gray-600">Total Transactions:</span>
                     <span className="ml-2 font-medium">{dashboardData.summary.total_transactions}</span>
                   </div>
-                  <div>
+                  <div className="flex items-center justify-center py-2">
                     <span className="text-gray-600">Current Period:</span>
                     <span className="ml-2 font-medium">{dashboardData.summary.current_period}</span>
                   </div>
-                  <div>
+                  <div className="flex items-center justify-center py-2">
                     <span className="text-gray-600">Previous Period:</span>
                     <span className="ml-2 font-medium">{dashboardData.summary.previous_period}</span>
-                  </div>
-                </div>
-
-                {/* Root Cause Analysis Summary for Each Metric */}
-                <div className="space-y-6">
-                  <h3 className="text-lg font-medium text-gray-800 mb-4">Key Insights by Metric</h3>
-                  
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {Object.entries(dashboardData.root_cause_analysis).map(([metric, analysis]) => (
-                      <div key={metric} className="summary-metric-card">
-                        <div className="flex items-center mb-3">
-                          <div className={`w-8 h-8 rounded-lg ${getMetricColorClass(metric)} flex items-center justify-center mr-3`}>
-                            <span className="text-white text-sm">{getMetricIcon(metric)}</span>
-                          </div>
-                          <h4 className="font-semibold text-gray-800">{getMetricDisplayName(metric)}</h4>
-                          <span className={`ml-2 trend-badge ${
-                            analysis.trend_direction === 'increasing' 
-                              ? (metric === 'expenses' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800')
-                              : analysis.trend_direction === 'decreasing'
-                              ? (metric === 'expenses' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800')
-                              : 'bg-gray-100 text-gray-800'
-                          }`}>
-                            {analysis.trend_direction}
-                          </span>
-                        </div>
-                        
-                        <p className="text-sm text-gray-700 mb-3 leading-relaxed">
-                          {analysis.analysis_summary}
-                        </p>
-                        
-                        {analysis.recommendations && analysis.recommendations.length > 0 && (
-                          <div className="space-y-1">
-                            <h5 className="text-xs font-medium text-gray-600 uppercase tracking-wide">Top Recommendation</h5>
-                            <div className="recommendation-highlight">
-                              💡 {analysis.recommendations[0]}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
                   </div>
                 </div>
               </div>
@@ -285,6 +243,17 @@ const App: React.FC = () => {
                   />
                 ))}
               </div>
+
+              {/* Summary Tile for Selected Metric */}
+              {selectedMetric && dashboardData.root_cause_analysis[selectedMetric as keyof typeof dashboardData.root_cause_analysis] && (
+                <SummaryTile
+                  selectedMetric={selectedMetric}
+                  analysis={dashboardData.root_cause_analysis[selectedMetric as keyof typeof dashboardData.root_cause_analysis]}
+                  getMetricDisplayName={getMetricDisplayName}
+                  getMetricIcon={getMetricIcon}
+                  getMetricColorClass={getMetricColorClass}
+                />
+              )}
 
               {/* Selected Metric Content */}
               {selectedMetric && dashboardData.tiles[selectedMetric as keyof typeof dashboardData.tiles] && (
