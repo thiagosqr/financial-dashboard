@@ -1,0 +1,3 @@
+OPENAI_API_KEY=your_openai_api_key_here
+PHOENIX_API_KEY=your_phoenix_api_key_here
+PHOENIX_COLLECTOR_ENDPOINT=your_phoenix_collector_endpoint_here

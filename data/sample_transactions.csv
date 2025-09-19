@@ -1,0 +1,52 @@
+date,description,amount,category,account
+2024-01-15,Client Payment - Project Alpha,15000.00,Revenue/Sales,Checking Account
+2024-01-20,Office Rent,2500.00,Operating Expenses,Checking Account
+2024-01-22,Software Subscription,299.00,Operating Expenses,Checking Account
+2024-01-25,Client Payment - Project Beta,12000.00,Revenue/Sales,Checking Account
+2024-01-28,Utilities,450.00,Utilities,Checking Account
+2024-01-30,Marketing Campaign,1200.00,Marketing,Checking Account
+2024-02-01,Client Payment - Project Gamma,18000.00,Revenue/Sales,Checking Account
+2024-02-05,Office Rent,2500.00,Operating Expenses,Checking Account
+2024-02-08,Employee Salary,8000.00,Operating Expenses,Checking Account
+2024-02-12,Software Subscription,299.00,Operating Expenses,Checking Account
+2024-02-15,Client Payment - Project Delta,22000.00,Revenue/Sales,Checking Account
+2024-02-18,Equipment Purchase,3500.00,Equipment,Checking Account
+2024-02-22,Utilities,480.00,Utilities,Checking Account
+2024-02-25,Professional Services,1500.00,Professional Services,Checking Account
+2024-02-28,Marketing Campaign,1800.00,Marketing,Checking Account
+2024-03-01,Client Payment - Project Epsilon,25000.00,Revenue/Sales,Checking Account
+2024-03-05,Office Rent,2500.00,Operating Expenses,Checking Account
+2024-03-08,Employee Salary,8000.00,Operating Expenses,Checking Account
+2024-03-12,Software Subscription,299.00,Operating Expenses,Checking Account
+2024-03-15,Client Payment - Project Zeta,30000.00,Revenue/Sales,Checking Account
+2024-03-18,Insurance Premium,1200.00,Insurance,Checking Account
+2024-03-22,Utilities,520.00,Utilities,Checking Account
+2024-03-25,Travel Expenses,2500.00,Travel,Checking Account
+2024-03-28,Marketing Campaign,2200.00,Marketing,Checking Account
+2024-04-01,Client Payment - Project Eta,28000.00,Revenue/Sales,Checking Account
+2024-04-05,Office Rent,2500.00,Operating Expenses,Checking Account
+2024-04-08,Employee Salary,8000.00,Operating Expenses,Checking Account
+2024-04-12,Software Subscription,299.00,Operating Expenses,Checking Account
+2024-04-15,Client Payment - Project Theta,32000.00,Revenue/Sales,Checking Account
+2024-04-18,Equipment Maintenance,800.00,Equipment,Checking Account
+2024-04-22,Utilities,550.00,Utilities,Checking Account
+2024-04-25,Professional Services,2000.00,Professional Services,Checking Account
+2024-04-28,Marketing Campaign,2500.00,Marketing,Checking Account
+2024-05-01,Client Payment - Project Iota,35000.00,Revenue/Sales,Checking Account
+2024-05-05,Office Rent,2500.00,Operating Expenses,Checking Account
+2024-05-08,Employee Salary,8000.00,Operating Expenses,Checking Account
+2024-05-12,Software Subscription,299.00,Operating Expenses,Checking Account
+2024-05-15,Client Payment - Project Kappa,38000.00,Revenue/Sales,Checking Account
+2024-05-18,New Equipment,5000.00,Equipment,Checking Account
+2024-05-22,Utilities,580.00,Utilities,Checking Account
+2024-05-25,Travel Expenses,3000.00,Travel,Checking Account
+2024-05-28,Marketing Campaign,2800.00,Marketing,Checking Account
+2024-06-01,Client Payment - Project Lambda,40000.00,Revenue/Sales,Checking Account
+2024-06-05,Office Rent,2500.00,Operating Expenses,Checking Account
+2024-06-08,Employee Salary,8000.00,Operating Expenses,Checking Account
+2024-06-12,Software Subscription,299.00,Operating Expenses,Checking Account
+2024-06-15,Client Payment - Project Mu,42000.00,Revenue/Sales,Checking Account
+2024-06-18,Insurance Premium,1200.00,Insurance,Checking Account
+2024-06-22,Utilities,600.00,Utilities,Checking Account
+2024-06-25,Professional Services,2500.00,Professional Services,Checking Account
+2024-12-28,Marketing Campaign,3000.00,Marketing,Checking Account
