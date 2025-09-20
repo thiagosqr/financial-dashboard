@@ -497,7 +497,7 @@ class FinancialWorkflow:
                             }
                             for factor in revenue_root_cause.top_contributing_factors
                         ],
-                        "recommendations": [advisor_recommendations.get("revenue", {}).get("recommendation", "No recommendations available")]
+                        "recommendations": [getattr(advisor_recommendations.get("revenue"), "recommendation", "No recommendations available") if advisor_recommendations.get("revenue") else "No recommendations available"]
                     },
                     "expenses": {
                         "metric": expenses_root_cause.metric,
@@ -514,7 +514,7 @@ class FinancialWorkflow:
                             }
                             for factor in expenses_root_cause.top_contributing_factors
                         ],
-                        "recommendations": [advisor_recommendations.get("expenses", {}).get("recommendation", "No recommendations available")]
+                        "recommendations": [getattr(advisor_recommendations.get("expenses"), "recommendation", "No recommendations available") if advisor_recommendations.get("expenses") else "No recommendations available"]
                     },
                     "income": {
                         "metric": income_root_cause.metric,
@@ -531,7 +531,7 @@ class FinancialWorkflow:
                             }
                             for factor in income_root_cause.top_contributing_factors
                         ],
-                        "recommendations": [advisor_recommendations.get("income", {}).get("recommendation", "No recommendations available")]
+                        "recommendations": [getattr(advisor_recommendations.get("income"), "recommendation", "No recommendations available") if advisor_recommendations.get("income") else "No recommendations available"]
                     },
                     "free_cash_flow": {
                         "metric": cash_flow_root_cause.metric,
@@ -548,7 +548,7 @@ class FinancialWorkflow:
                             }
                             for factor in cash_flow_root_cause.top_contributing_factors
                         ],
-                        "recommendations": [advisor_recommendations.get("free_cash_flow", {}).get("recommendation", "No recommendations available")]
+                        "recommendations": [getattr(advisor_recommendations.get("free_cash_flow"), "recommendation", "No recommendations available") if advisor_recommendations.get("free_cash_flow") else "No recommendations available"]
                     }
                 },
                 "insights": {
