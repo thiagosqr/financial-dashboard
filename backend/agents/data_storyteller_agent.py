@@ -140,7 +140,7 @@ Make it accessible to business stakeholders while maintaining financial accuracy
             "revenue": revenue_narrative,
             "expenses": expenses_narrative,
             "income": income_narrative,
-            "cash_flow": cash_flow_narrative,
+            "free_cash_flow": cash_flow_narrative,
             "overall_business_story": overall_narrative,
             "priority_actions": priority_actions,
             "overall_insights": overall_insights

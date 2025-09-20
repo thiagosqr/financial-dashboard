@@ -352,7 +352,7 @@ class FinancialWorkflow:
                         "change": income_comparison.income_change,
                         "change_percent": income_comparison.current_month.income_pct_change
                     },
-                    "cash_flow": {
+                    "free_cash_flow": {
                         "current": cash_flow_comparison.current_month.cash_flow,
                         "previous": cash_flow_comparison.previous_month.cash_flow,
                         "change": cash_flow_comparison.cash_flow_change,
@@ -364,7 +364,7 @@ class FinancialWorkflow:
                     "revenue": revenue_time_series.revenue,
                     "expenses": expenses_time_series.expenses,
                     "income": income_time_series.net_income,
-                    "cash_flow": cash_flow_time_series.cash_flow
+                    "free_cash_flow": cash_flow_time_series.cash_flow
                 },
                 "root_cause_analysis": {
                     "revenue": {
@@ -418,7 +418,7 @@ class FinancialWorkflow:
                         ],
                         "recommendations": income_root_cause.recommendations
                     },
-                    "cash_flow": {
+                    "free_cash_flow": {
                         "metric": cash_flow_root_cause.metric,
                         "trend_direction": cash_flow_root_cause.trend_direction,
                         "analysis_summary": cash_flow_root_cause.analysis_summary,
@@ -460,11 +460,11 @@ class FinancialWorkflow:
                         "actionable_recommendations": narratives["income"].actionable_recommendations,
                         "business_impact": narratives["income"].business_impact
                     },
-                    "cash_flow": {
-                        "narrative": narratives["cash_flow"].narrative,
-                        "key_insights": narratives["cash_flow"].key_insights,
-                        "actionable_recommendations": narratives["cash_flow"].actionable_recommendations,
-                        "business_impact": narratives["cash_flow"].business_impact
+                    "free_cash_flow": {
+                        "narrative": narratives["free_cash_flow"].narrative,
+                        "key_insights": narratives["free_cash_flow"].key_insights,
+                        "actionable_recommendations": narratives["free_cash_flow"].actionable_recommendations,
+                        "business_impact": narratives["free_cash_flow"].business_impact
                     }
                 },
                 "summary": {
