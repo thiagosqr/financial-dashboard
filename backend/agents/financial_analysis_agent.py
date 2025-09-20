@@ -15,12 +15,14 @@ class FinancialMetrics(BaseModel):
     revenue: float = Field(description="Total revenue for the period")
     expenses: float = Field(description="Total expenses for the period")
     profitability: float = Field(description="Net profit/loss for the period")
-    cash_flow: float = Field(description="Net cash flow for the period")
+    free_cash_flow: float = Field(description="Free cash flow for the period (Operating Cash Flow - Capital Expenditure)")
+    operating_cash_flow: float = Field(description="Operating cash flow for the period (Cash Inflows - Cash Outflows)")
+    capital_expenditure: float = Field(description="Capital expenditure for the period")
     period: str = Field(description="Period being analyzed (e.g., '2024-01')")
     revenue_pct_change: float = Field(description="Revenue percentage change from previous period")
     expenses_pct_change: float = Field(description="Expenses percentage change from previous period")
     profitability_pct_change: float = Field(description="Profitability percentage change from previous period")
-    cash_flow_pct_change: float = Field(description="Cash flow percentage change from previous period")
+    free_cash_flow_pct_change: float = Field(description="Free cash flow percentage change from previous period")
 
 
 class MonthlyComparison(BaseModel):
@@ -30,7 +32,7 @@ class MonthlyComparison(BaseModel):
     revenue_change: float = Field(description="Revenue change from previous month")
     expenses_change: float = Field(description="Expenses change from previous month")
     profitability_change: float = Field(description="Profitability change from previous month")
-    cash_flow_change: float = Field(description="Cash flow change from previous month")
+    free_cash_flow_change: float = Field(description="Free cash flow change from previous month")
 
 
 class TimeSeriesData(BaseModel):
@@ -39,11 +41,13 @@ class TimeSeriesData(BaseModel):
     revenue: List[float] = Field(description="Revenue values for each month")
     expenses: List[float] = Field(description="Expense values for each month")
     profitability: List[float] = Field(description="Profitability values for each month")
-    cash_flow: List[float] = Field(description="Cash flow values for each month")
+    free_cash_flow: List[float] = Field(description="Free cash flow values for each month")
+    operating_cash_flow: List[float] = Field(description="Operating cash flow values for each month")
+    capital_expenditure: List[float] = Field(description="Capital expenditure values for each month")
     revenue_pct_changes: List[float] = Field(description="Revenue percentage changes month-over-month")
     expenses_pct_changes: List[float] = Field(description="Expenses percentage changes month-over-month")
     profitability_pct_changes: List[float] = Field(description="Profitability percentage changes month-over-month")
-    cash_flow_pct_changes: List[float] = Field(description="Cash flow percentage changes month-over-month")
+    free_cash_flow_pct_changes: List[float] = Field(description="Free cash flow percentage changes month-over-month")
 
 
 class RootCauseFactor(BaseModel):
@@ -60,7 +64,7 @@ class RootCauseFactor(BaseModel):
 
 class RootCauseAnalysis(BaseModel):
     """Schema for root cause analysis results"""
-    metric: str = Field(description="Metric being analyzed (Revenue, Expenses, Profitability, Cash Flow)")
+    metric: str = Field(description="Metric being analyzed (Revenue, Expenses, Profitability, Free Cash Flow)")
     current_period_value: float = Field(description="Current period metric value")
     previous_period_value: float = Field(description="Previous period metric value")
     total_change: float = Field(description="Total change in metric")
@@ -76,7 +80,7 @@ class ComprehensiveRootCauseAnalysis(BaseModel):
     revenue_analysis: RootCauseAnalysis = Field(description="Revenue root cause analysis")
     expenses_analysis: RootCauseAnalysis = Field(description="Expenses root cause analysis")
     profitability_analysis: RootCauseAnalysis = Field(description="Profitability root cause analysis")
-    cash_flow_analysis: RootCauseAnalysis = Field(description="Cash flow root cause analysis")
+    free_cash_flow_analysis: RootCauseAnalysis = Field(description="Free cash flow root cause analysis")
     overall_insights: List[str] = Field(description="Overall business insights from the analysis")
     priority_actions: List[str] = Field(description="Priority actions based on all analyses")
 
@@ -86,6 +90,19 @@ class FinancialAnalysisAgent:
     
     def __init__(self):
         self.revenue_categories = ['revenue/sales', 'interest income', 'other income', 'gst collected']
+        # Capital expenditure categories based on the provided examples
+        self.capex_categories = [
+            'plant & equipment', 'motor vehicle', 'office furniture and equipment', 
+            'computer expenses', 'equipment', 'machinery', 'building', 'land'
+        ]
+        # Capital expenditure keywords in descriptions
+        self.capex_keywords = [
+            'purchase', 'acquisition', 'equipment', 'machinery', 'building', 'land', 
+            'computer', 'laptop', 'server', 'furniture', 'vehicle', 'van', 'truck',
+            'patent', 'license', 'commercial oven', 'dough mixer', 'display fridge',
+            'industrial scale', 'delivery van', 'office desk', 'filing cabinet',
+            'workstation', 'reception counter'
+        ]
     
     def _transactions_to_dataframe(self, transactions: List[TransactionData]) -> pd.DataFrame:
         """Convert transactions to pandas DataFrame for analysis"""
@@ -103,6 +120,21 @@ class FinancialAnalysisAgent:
         df['date'] = pd.to_datetime(df['date'])
         df['year_month'] = df['date'].dt.to_period('M')
         return df
+    
+    def _is_capital_expenditure(self, category: str, description: str) -> bool:
+        """Determine if a transaction is capital expenditure based on category and description"""
+        category_lower = category.lower()
+        description_lower = description.lower()
+        
+        # Check if category matches capex categories
+        if any(capex_cat in category_lower for capex_cat in self.capex_categories):
+            return True
+            
+        # Check if description contains capex keywords
+        if any(keyword in description_lower for keyword in self.capex_keywords):
+            return True
+            
+        return False
     
     def calculate_monthly_metrics(self, transactions: List[TransactionData], 
                                 target_month: str = None, 
@@ -122,12 +154,14 @@ class FinancialAnalysisAgent:
                 revenue=0.0,
                 expenses=0.0,
                 profitability=0.0,
-                cash_flow=0.0,
+                free_cash_flow=0.0,
+                operating_cash_flow=0.0,
+                capital_expenditure=0.0,
                 period=target_month,
                 revenue_pct_change=0.0,
                 expenses_pct_change=0.0,
                 profitability_pct_change=0.0,
-                cash_flow_pct_change=0.0
+                free_cash_flow_pct_change=0.0
             )
         
         # Calculate metrics using pandas
@@ -135,13 +169,26 @@ class FinancialAnalysisAgent:
         revenue = month_df[revenue_mask]['amount'].sum()
         expenses = month_df[~revenue_mask]['amount'].sum()
         profitability = revenue - expenses
-        cash_flow = month_df['amount'].sum()
+        
+        # Calculate Capital Expenditure
+        capex_mask = month_df.apply(lambda row: self._is_capital_expenditure(row['category'], row['description']), axis=1)
+        capital_expenditure = month_df[capex_mask]['amount'].abs().sum()  # CapEx is positive
+        
+        # Calculate Operating Cash Flow = Total Cash Inflows - Total Cash Outflows
+        # Cash Inflows = positive amounts (credits)
+        cash_inflows = month_df[month_df['amount'] > 0]['amount'].sum()
+        # Cash Outflows = negative amounts (debits) - make positive for calculation
+        cash_outflows = month_df[month_df['amount'] < 0]['amount'].abs().sum()
+        operating_cash_flow = cash_inflows - cash_outflows
+        
+        # Free Cash Flow = Operating Cash Flow - Capital Expenditure
+        free_cash_flow = operating_cash_flow - capital_expenditure
         
         # Calculate percentage changes if previous month data is available
         revenue_pct_change = 0.0
         expenses_pct_change = 0.0
         profitability_pct_change = 0.0
-        cash_flow_pct_change = 0.0
+        free_cash_flow_pct_change = 0.0
         
         if previous_month:
             prev_period = pd.Period(previous_month)
@@ -152,24 +199,33 @@ class FinancialAnalysisAgent:
                 prev_revenue = prev_month_df[prev_revenue_mask]['amount'].sum()
                 prev_expenses = prev_month_df[~prev_revenue_mask]['amount'].sum()
                 prev_profitability = prev_revenue - prev_expenses
-                prev_cash_flow = prev_month_df['amount'].sum()
+                
+                # Calculate previous month's free cash flow
+                prev_capex_mask = prev_month_df.apply(lambda row: self._is_capital_expenditure(row['category'], row['description']), axis=1)
+                prev_capital_expenditure = prev_month_df[prev_capex_mask]['amount'].abs().sum()
+                prev_cash_inflows = prev_month_df[prev_month_df['amount'] > 0]['amount'].sum()
+                prev_cash_outflows = prev_month_df[prev_month_df['amount'] < 0]['amount'].abs().sum()
+                prev_operating_cash_flow = prev_cash_inflows - prev_cash_outflows
+                prev_free_cash_flow = prev_operating_cash_flow - prev_capital_expenditure
                 
                 # Calculate percentage changes
                 revenue_pct_change = self._calculate_percentage_change(revenue, prev_revenue)
                 expenses_pct_change = self._calculate_percentage_change(expenses, prev_expenses)
                 profitability_pct_change = self._calculate_percentage_change(profitability, prev_profitability)
-                cash_flow_pct_change = self._calculate_percentage_change(cash_flow, prev_cash_flow)
+                free_cash_flow_pct_change = self._calculate_percentage_change(free_cash_flow, prev_free_cash_flow)
         
         return FinancialMetrics(
             revenue=revenue,
             expenses=expenses,
             profitability=profitability,
-            cash_flow=cash_flow,
+            free_cash_flow=free_cash_flow,
+            operating_cash_flow=operating_cash_flow,
+            capital_expenditure=capital_expenditure,
             period=target_month,
             revenue_pct_change=revenue_pct_change,
             expenses_pct_change=expenses_pct_change,
             profitability_pct_change=profitability_pct_change,
-            cash_flow_pct_change=cash_flow_pct_change
+            free_cash_flow_pct_change=free_cash_flow_pct_change
         )
     
     def _calculate_percentage_change(self, current: float, previous: float) -> float:
@@ -186,12 +242,14 @@ class FinancialAnalysisAgent:
                 revenue=0.0,
                 expenses=0.0,
                 profitability=0.0,
-                cash_flow=0.0,
+                free_cash_flow=0.0,
+                operating_cash_flow=0.0,
+                capital_expenditure=0.0,
                 period="unknown",
                 revenue_pct_change=0.0,
                 expenses_pct_change=0.0,
                 profitability_pct_change=0.0,
-                cash_flow_pct_change=0.0
+                free_cash_flow_pct_change=0.0
             )
             return MonthlyComparison(
                 current_month=empty_metrics,
@@ -199,7 +257,7 @@ class FinancialAnalysisAgent:
                 revenue_change=0.0,
                 expenses_change=0.0,
                 profitability_change=0.0,
-                cash_flow_change=0.0
+                free_cash_flow_change=0.0
             )
         
         df = self._transactions_to_dataframe(transactions)
@@ -215,12 +273,14 @@ class FinancialAnalysisAgent:
                 revenue=0.0,
                 expenses=0.0,
                 profitability=0.0,
-                cash_flow=0.0,
+                free_cash_flow=0.0,
+                operating_cash_flow=0.0,
+                capital_expenditure=0.0,
                 period="unknown",
                 revenue_pct_change=0.0,
                 expenses_pct_change=0.0,
                 profitability_pct_change=0.0,
-                cash_flow_pct_change=0.0
+                free_cash_flow_pct_change=0.0
             )
         else:
             # Get current and previous months
@@ -238,7 +298,7 @@ class FinancialAnalysisAgent:
         revenue_change = current_metrics.revenue - previous_metrics.revenue
         expenses_change = current_metrics.expenses - previous_metrics.expenses
         profitability_change = current_metrics.profitability - previous_metrics.profitability
-        cash_flow_change = current_metrics.cash_flow - previous_metrics.cash_flow
+        free_cash_flow_change = current_metrics.free_cash_flow - previous_metrics.free_cash_flow
         
         return MonthlyComparison(
             current_month=current_metrics,
@@ -246,7 +306,7 @@ class FinancialAnalysisAgent:
             revenue_change=revenue_change,
             expenses_change=expenses_change,
             profitability_change=profitability_change,
-            cash_flow_change=cash_flow_change
+            free_cash_flow_change=free_cash_flow_change
         )
     
     def generate_time_series_data(self, transactions: List[TransactionData], 
@@ -258,11 +318,13 @@ class FinancialAnalysisAgent:
                 revenue=[],
                 expenses=[],
                 profitability=[],
-                cash_flow=[],
+                free_cash_flow=[],
+                operating_cash_flow=[],
+                capital_expenditure=[],
                 revenue_pct_changes=[],
                 expenses_pct_changes=[],
                 profitability_pct_changes=[],
-                cash_flow_pct_changes=[]
+                free_cash_flow_pct_changes=[]
             )
         
         df = self._transactions_to_dataframe(transactions)
@@ -276,11 +338,13 @@ class FinancialAnalysisAgent:
         revenue_data = []
         expenses_data = []
         profitability_data = []
-        cash_flow_data = []
+        free_cash_flow_data = []
+        operating_cash_flow_data = []
+        capital_expenditure_data = []
         revenue_pct_changes = []
         expenses_pct_changes = []
         profitability_pct_changes = []
-        cash_flow_pct_changes = []
+        free_cash_flow_pct_changes = []
         
         for i, period in enumerate(available_months):
             month_str = period.strftime('%Y-%m')
@@ -296,24 +360,28 @@ class FinancialAnalysisAgent:
             revenue_data.append(metrics.revenue)
             expenses_data.append(metrics.expenses)
             profitability_data.append(metrics.profitability)
-            cash_flow_data.append(metrics.cash_flow)
+            free_cash_flow_data.append(metrics.free_cash_flow)
+            operating_cash_flow_data.append(metrics.operating_cash_flow)
+            capital_expenditure_data.append(metrics.capital_expenditure)
             
             # Add percentage changes
             revenue_pct_changes.append(metrics.revenue_pct_change)
             expenses_pct_changes.append(metrics.expenses_pct_change)
             profitability_pct_changes.append(metrics.profitability_pct_change)
-            cash_flow_pct_changes.append(metrics.cash_flow_pct_change)
+            free_cash_flow_pct_changes.append(metrics.free_cash_flow_pct_change)
         
         return TimeSeriesData(
             dates=dates,
             revenue=revenue_data,
             expenses=expenses_data,
             profitability=profitability_data,
-            cash_flow=cash_flow_data,
+            free_cash_flow=free_cash_flow_data,
+            operating_cash_flow=operating_cash_flow_data,
+            capital_expenditure=capital_expenditure_data,
             revenue_pct_changes=revenue_pct_changes,
             expenses_pct_changes=expenses_pct_changes,
             profitability_pct_changes=profitability_pct_changes,
-            cash_flow_pct_changes=cash_flow_pct_changes
+            free_cash_flow_pct_changes=free_cash_flow_pct_changes
         )
     
     def get_current_month_summary(self, transactions: List[TransactionData]) -> Dict[str, Any]:
@@ -342,11 +410,19 @@ class FinancialAnalysisAgent:
                     "change": comparison.profitability_change,
                     "percentage_change": comparison.current_month.profitability_pct_change
                 },
-                "cash_flow": {
-                    "value": comparison.current_month.cash_flow,
-                    "previous_value": comparison.previous_month.cash_flow,
-                    "change": comparison.cash_flow_change,
-                    "percentage_change": comparison.current_month.cash_flow_pct_change
+                "free_cash_flow": {
+                    "value": comparison.current_month.free_cash_flow,
+                    "previous_value": comparison.previous_month.free_cash_flow,
+                    "change": comparison.free_cash_flow_change,
+                    "percentage_change": comparison.current_month.free_cash_flow_pct_change
+                },
+                "operating_cash_flow": {
+                    "value": comparison.current_month.operating_cash_flow,
+                    "previous_value": comparison.previous_month.operating_cash_flow
+                },
+                "capital_expenditure": {
+                    "value": comparison.current_month.capital_expenditure,
+                    "previous_value": comparison.previous_month.capital_expenditure
                 }
             },
             "time_series": {
@@ -354,11 +430,13 @@ class FinancialAnalysisAgent:
                 "revenue": time_series.revenue,
                 "expenses": time_series.expenses,
                 "profitability": time_series.profitability,
-                "cash_flow": time_series.cash_flow,
+                "free_cash_flow": time_series.free_cash_flow,
+                "operating_cash_flow": time_series.operating_cash_flow,
+                "capital_expenditure": time_series.capital_expenditure,
                 "revenue_pct_changes": time_series.revenue_pct_changes,
                 "expenses_pct_changes": time_series.expenses_pct_changes,
                 "profitability_pct_changes": time_series.profitability_pct_changes,
-                "cash_flow_pct_changes": time_series.cash_flow_pct_changes
+                "free_cash_flow_pct_changes": time_series.free_cash_flow_pct_changes
             }
         }
     
@@ -391,7 +469,7 @@ class FinancialAnalysisAgent:
         return dict(sorted_sources[:10])
     
     def get_metric_analysis(self, transactions: List[TransactionData], metric: str) -> Dict[str, Any]:
-        """Get detailed analysis for a specific metric (Revenue, Expenses, Profitability, Cash Flow)"""
+        """Get detailed analysis for a specific metric (Revenue, Expenses, Profitability, Free Cash Flow)"""
         comparison = self.calculate_month_over_month_comparison(transactions)
         time_series = self.generate_time_series_data(transactions, months_back=12)
         
@@ -416,15 +494,15 @@ class FinancialAnalysisAgent:
             pct_change = comparison.current_month.profitability_pct_change
             time_series_data = time_series.profitability
             pct_changes = time_series.profitability_pct_changes
-        elif metric.lower() == "cash_flow":
-            current = comparison.current_month.cash_flow
-            previous = comparison.previous_month.cash_flow
-            change = comparison.cash_flow_change
-            pct_change = comparison.current_month.cash_flow_pct_change
-            time_series_data = time_series.cash_flow
-            pct_changes = time_series.cash_flow_pct_changes
+        elif metric.lower() == "free_cash_flow" or metric.lower() == "free cash flow":
+            current = comparison.current_month.free_cash_flow
+            previous = comparison.previous_month.free_cash_flow
+            change = comparison.free_cash_flow_change
+            pct_change = comparison.current_month.free_cash_flow_pct_change
+            time_series_data = time_series.free_cash_flow
+            pct_changes = time_series.free_cash_flow_pct_changes
         else:
-            raise ValueError(f"Unknown metric: {metric}. Must be one of: Revenue, Expenses, Profitability, Cash Flow")
+            raise ValueError(f"Unknown metric: {metric}. Must be one of: Revenue, Expenses, Profitability, Free Cash Flow")
         
         return {
             "metric": metric,
@@ -457,10 +535,10 @@ class FinancialAnalysisAgent:
             return self._analyze_expenses_root_cause(current_df, previous_df, comparison)
         elif metric.lower() == "profitability":
             return self._analyze_profitability_root_cause(current_df, previous_df, comparison)
-        elif metric.lower() == "cash_flow" or metric.lower() == "cash flow":
-            return self._analyze_cash_flow_root_cause(current_df, previous_df, comparison)
+        elif metric.lower() == "free_cash_flow" or metric.lower() == "free cash flow":
+            return self._analyze_free_cash_flow_root_cause(current_df, previous_df, comparison)
         else:
-            raise ValueError(f"Unknown metric: {metric}. Must be one of: Revenue, Expenses, Profitability, Cash Flow")
+            raise ValueError(f"Unknown metric: {metric}. Must be one of: Revenue, Expenses, Profitability, Free Cash Flow")
     
     def _analyze_revenue_root_cause(self, current_df: pd.DataFrame, previous_df: pd.DataFrame, 
                                    comparison: MonthlyComparison) -> RootCauseAnalysis:
@@ -583,47 +661,62 @@ class FinancialAnalysisAgent:
             recommendations=recommendations
         )
     
-    def _analyze_cash_flow_root_cause(self, current_df: pd.DataFrame, previous_df: pd.DataFrame, 
-                                     comparison: MonthlyComparison) -> RootCauseAnalysis:
-        """Analyze root causes for cash flow changes"""
+    def _analyze_free_cash_flow_root_cause(self, current_df: pd.DataFrame, previous_df: pd.DataFrame, 
+                                          comparison: MonthlyComparison) -> RootCauseAnalysis:
+        """Analyze root causes for free cash flow changes"""
         factors = []
         
-        # Cash flow includes all transactions, so analyze both revenue and expenses
-        current_revenue = current_df[current_df['category'].str.lower().isin(self.revenue_categories)]
-        previous_revenue = previous_df[previous_df['category'].str.lower().isin(self.revenue_categories)]
-        current_expenses = current_df[~current_df['category'].str.lower().isin(self.revenue_categories)]
-        previous_expenses = previous_df[~previous_df['category'].str.lower().isin(self.revenue_categories)]
+        # Free cash flow = Operating Cash Flow - Capital Expenditure
+        # Analyze operating cash flow components (inflows and outflows)
+        current_inflows = current_df[current_df['amount'] > 0]
+        previous_inflows = previous_df[previous_df['amount'] > 0]
+        current_outflows = current_df[current_df['amount'] < 0]
+        previous_outflows = previous_df[previous_df['amount'] < 0]
         
-        # Revenue impact factors (positive impact on cash flow)
-        revenue_factors = self._analyze_by_category(current_revenue, previous_revenue, "category")
-        for factor in revenue_factors:
-            factor.factor_type = f"Inflow - {factor.factor_type}"
-        factors.extend(revenue_factors)
+        # Analyze capital expenditure separately
+        current_capex = current_df[current_df.apply(lambda row: self._is_capital_expenditure(row['category'], row['description']), axis=1)]
+        previous_capex = previous_df[previous_df.apply(lambda row: self._is_capital_expenditure(row['category'], row['description']), axis=1)]
         
-        # Expense impact factors (negative impact on cash flow)
-        expense_factors = self._analyze_by_category(current_expenses, previous_expenses, "category")
-        for factor in expense_factors:
-            factor.factor_type = f"Outflow - {factor.factor_type}"
-        factors.extend(expense_factors)
+        # Cash inflow factors (positive impact on free cash flow)
+        inflow_factors = self._analyze_by_category(current_inflows, previous_inflows, "category")
+        for factor in inflow_factors:
+            factor.factor_type = f"Cash Inflow - {factor.factor_type}"
+        factors.extend(inflow_factors)
+        
+        # Cash outflow factors (negative impact on free cash flow, but exclude CapEx)
+        non_capex_outflows = current_outflows[~current_outflows.apply(lambda row: self._is_capital_expenditure(row['category'], row['description']), axis=1)]
+        prev_non_capex_outflows = previous_outflows[~previous_outflows.apply(lambda row: self._is_capital_expenditure(row['category'], row['description']), axis=1)]
+        
+        outflow_factors = self._analyze_by_category(non_capex_outflows, prev_non_capex_outflows, "category")
+        for factor in outflow_factors:
+            factor.factor_type = f"Operating Outflow - {factor.factor_type}"
+        factors.extend(outflow_factors)
+        
+        # Capital expenditure factors (negative impact on free cash flow)
+        capex_factors = self._analyze_by_category(current_capex, previous_capex, "category")
+        for factor in capex_factors:
+            factor.factor_type = f"Capital Expenditure - {factor.factor_type}"
+            factor.change = -abs(factor.change)  # CapEx reduces free cash flow
+        factors.extend(capex_factors)
         
         # Analyze by account
         account_factors = self._analyze_by_category(current_df, previous_df, "account")
         factors.extend(account_factors)
         
         # Rank factors by impact
-        ranked_factors = self._rank_factors_by_impact(factors, comparison.cash_flow_change)
+        ranked_factors = self._rank_factors_by_impact(factors, comparison.free_cash_flow_change)
         
         # Generate analysis summary and recommendations
-        summary = self._generate_cash_flow_analysis_summary(comparison, ranked_factors)
-        recommendations = self._generate_cash_flow_recommendations(ranked_factors)
+        summary = self._generate_free_cash_flow_analysis_summary(comparison, ranked_factors)
+        recommendations = self._generate_free_cash_flow_recommendations(ranked_factors)
         
         return RootCauseAnalysis(
-            metric="Cash Flow",
-            current_period_value=comparison.current_month.cash_flow,
-            previous_period_value=comparison.previous_month.cash_flow,
-            total_change=comparison.cash_flow_change,
-            change_percent=comparison.current_month.cash_flow_pct_change,
-            trend_direction="increasing" if comparison.cash_flow_change > 0 else "decreasing" if comparison.cash_flow_change < 0 else "stable",
+            metric="Free Cash Flow",
+            current_period_value=comparison.current_month.free_cash_flow,
+            previous_period_value=comparison.previous_month.free_cash_flow,
+            total_change=comparison.free_cash_flow_change,
+            change_percent=comparison.current_month.free_cash_flow_pct_change,
+            trend_direction="increasing" if comparison.free_cash_flow_change > 0 else "decreasing" if comparison.free_cash_flow_change < 0 else "stable",
             top_contributing_factors=ranked_factors[:5],  # Top 5 factors
             analysis_summary=summary,
             recommendations=recommendations
@@ -767,16 +860,16 @@ class FinancialAnalysisAgent:
         
         return summary
     
-    def _generate_cash_flow_analysis_summary(self, comparison: MonthlyComparison, 
-                                           factors: List[RootCauseFactor]) -> str:
-        """Generate basic analysis summary for cash flow (narratives handled by DataStorytellerAgent)"""
-        direction = "improved" if comparison.cash_flow_change > 0 else "declined" if comparison.cash_flow_change < 0 else "remained stable"
+    def _generate_free_cash_flow_analysis_summary(self, comparison: MonthlyComparison, 
+                                                factors: List[RootCauseFactor]) -> str:
+        """Generate basic analysis summary for free cash flow (narratives handled by DataStorytellerAgent)"""
+        direction = "improved" if comparison.free_cash_flow_change > 0 else "declined" if comparison.free_cash_flow_change < 0 else "remained stable"
         
         if not factors:
-            return f"Cash flow {direction} by {abs(comparison.cash_flow_change):,.2f} ({abs(comparison.current_month.cash_flow_pct_change):.1f}%) with no significant contributing factors identified."
+            return f"Free cash flow {direction} by {abs(comparison.free_cash_flow_change):,.2f} ({abs(comparison.current_month.free_cash_flow_pct_change):.1f}%) with no significant contributing factors identified."
         
         top_factor = factors[0]
-        summary = f"Cash flow {direction} by {abs(comparison.cash_flow_change):,.2f} ({abs(comparison.current_month.cash_flow_pct_change):.1f}%). "
+        summary = f"Free cash flow {direction} by {abs(comparison.free_cash_flow_change):,.2f} ({abs(comparison.current_month.free_cash_flow_pct_change):.1f}%). "
         summary += f"Primary driver: {top_factor.factor_name} ({top_factor.factor_type}) with {top_factor.impact_score:.1f}% impact."
         
         if len(factors) > 1:
@@ -842,22 +935,27 @@ class FinancialAnalysisAgent:
         
         return recommendations
     
-    def _generate_cash_flow_recommendations(self, factors: List[RootCauseFactor]) -> List[str]:
-        """Generate basic recommendations for cash flow management (detailed recommendations handled by DataStorytellerAgent)"""
+    def _generate_free_cash_flow_recommendations(self, factors: List[RootCauseFactor]) -> List[str]:
+        """Generate basic recommendations for free cash flow management (detailed recommendations handled by DataStorytellerAgent)"""
         recommendations = []
         
         if not factors:
-            return ["Implement cash flow monitoring systems."]
+            return ["Implement free cash flow monitoring systems."]
         
         # Basic recommendations based on factors
-        inflow_factors = [f for f in factors if f.factor_type.startswith("Inflow")]
-        outflow_factors = [f for f in factors if f.factor_type.startswith("Outflow")]
+        inflow_factors = [f for f in factors if f.factor_type.startswith("Cash Inflow")]
+        outflow_factors = [f for f in factors if f.factor_type.startswith("Operating Outflow")]
+        capex_factors = [f for f in factors if f.factor_type.startswith("Capital Expenditure")]
         
         if inflow_factors:
-            recommendations.append("Optimize cash inflow processes.")
+            recommendations.append("Focus on increasing operating cash inflows.")
         
         if outflow_factors:
-            recommendations.append("Review cash outflow management.")
+            recommendations.append("Review and optimize operating cash outflows.")
+        
+        if capex_factors:
+            recommendations.append("Evaluate capital expenditure timing and necessity.")
+            recommendations.append("Consider phasing capital investments to improve free cash flow.")
         
         return recommendations
     
@@ -866,23 +964,23 @@ class FinancialAnalysisAgent:
         revenue_analysis = self.analyze_root_cause(transactions, "Revenue")
         expenses_analysis = self.analyze_root_cause(transactions, "Expenses")
         profitability_analysis = self.analyze_root_cause(transactions, "Profitability")
-        cash_flow_analysis = self.analyze_root_cause(transactions, "Cash Flow")
+        free_cash_flow_analysis = self.analyze_root_cause(transactions, "Free Cash Flow")
         
         # Generate overall insights
         overall_insights = self._generate_overall_insights(
-            revenue_analysis, expenses_analysis, profitability_analysis, cash_flow_analysis
+            revenue_analysis, expenses_analysis, profitability_analysis, free_cash_flow_analysis
         )
         
         # Generate priority actions
         priority_actions = self._generate_priority_actions(
-            revenue_analysis, expenses_analysis, profitability_analysis, cash_flow_analysis
+            revenue_analysis, expenses_analysis, profitability_analysis, free_cash_flow_analysis
         )
         
         return ComprehensiveRootCauseAnalysis(
             revenue_analysis=revenue_analysis,
             expenses_analysis=expenses_analysis,
             profitability_analysis=profitability_analysis,
-            cash_flow_analysis=cash_flow_analysis,
+            free_cash_flow_analysis=free_cash_flow_analysis,
             overall_insights=overall_insights,
             priority_actions=priority_actions
         )
@@ -890,7 +988,7 @@ class FinancialAnalysisAgent:
     def _generate_overall_insights(self, revenue_analysis: RootCauseAnalysis, 
                                   expenses_analysis: RootCauseAnalysis,
                                   profitability_analysis: RootCauseAnalysis,
-                                  cash_flow_analysis: RootCauseAnalysis) -> List[str]:
+                                  free_cash_flow_analysis: RootCauseAnalysis) -> List[str]:
         """Generate overall business insights from all analyses"""
         insights = []
         
@@ -899,7 +997,7 @@ class FinancialAnalysisAgent:
             ("Revenue", revenue_analysis.trend_direction, revenue_analysis.change_percent),
             ("Expenses", expenses_analysis.trend_direction, expenses_analysis.change_percent),
             ("Profitability", profitability_analysis.trend_direction, profitability_analysis.change_percent),
-            ("Cash Flow", cash_flow_analysis.trend_direction, cash_flow_analysis.change_percent)
+            ("Free Cash Flow", free_cash_flow_analysis.trend_direction, free_cash_flow_analysis.change_percent)
         ]
         
         # Identify patterns
@@ -919,15 +1017,15 @@ class FinancialAnalysisAgent:
             else:
                 insights.append("Expense growth is outpacing revenue growth, impacting profitability")
         
-        if cash_flow_analysis.trend_direction != profitability_analysis.trend_direction:
-            insights.append("Cash flow and profitability trends are diverging - review working capital management")
+        if free_cash_flow_analysis.trend_direction != profitability_analysis.trend_direction:
+            insights.append("Free cash flow and profitability trends are diverging - review capital expenditure and working capital management")
         
         return insights
     
     def _generate_priority_actions(self, revenue_analysis: RootCauseAnalysis, 
                                   expenses_analysis: RootCauseAnalysis,
                                   profitability_analysis: RootCauseAnalysis,
-                                  cash_flow_analysis: RootCauseAnalysis) -> List[str]:
+                                  free_cash_flow_analysis: RootCauseAnalysis) -> List[str]:
         """Generate priority actions based on all analyses"""
         actions = []
         
@@ -936,7 +1034,7 @@ class FinancialAnalysisAgent:
             ("Revenue", abs(revenue_analysis.change_percent)),
             ("Expenses", abs(expenses_analysis.change_percent)),
             ("Profitability", abs(profitability_analysis.change_percent)),
-            ("Cash Flow", abs(cash_flow_analysis.change_percent))
+            ("Free Cash Flow", abs(free_cash_flow_analysis.change_percent))
         ]
         
         # Sort by magnitude of change
@@ -948,8 +1046,9 @@ class FinancialAnalysisAgent:
         if "Profitability" in significant_changes:
             actions.append("Priority: Address profitability challenges immediately")
         
-        if "Cash Flow" in significant_changes:
-            actions.append("Priority: Implement cash flow management measures")
+        if "Free Cash Flow" in significant_changes:
+            actions.append("Priority: Implement free cash flow management measures")
+            actions.append("Priority: Review capital expenditure timing and necessity")
         
         if "Expenses" in significant_changes and expenses_analysis.trend_direction == "increasing":
             actions.append("Priority: Control expense growth")

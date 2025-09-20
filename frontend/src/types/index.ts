@@ -12,20 +12,22 @@ export interface DashboardData {
     revenue: FinancialTile;
     expenses: FinancialTile;
     income: FinancialTile;
-    cash_flow: FinancialTile;
+    free_cash_flow: FinancialTile;
   };
   time_series?: {
     dates: string[];
     revenue: number[];
     expenses: number[];
     income: number[];
-    cash_flow: number[];
+    free_cash_flow: number[];
+    operating_cash_flow?: number[];
+    capital_expenditure?: number[];
   };
   root_cause_analysis?: {
     revenue: RootCauseAnalysis;
     expenses: RootCauseAnalysis;
     income: RootCauseAnalysis;
-    cash_flow: RootCauseAnalysis;
+    free_cash_flow: RootCauseAnalysis;
   };
   insights?: Insights;
   summary?: {

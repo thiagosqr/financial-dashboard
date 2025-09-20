@@ -37,7 +37,7 @@ const FinancialTile: React.FC<FinancialTileProps> = ({
       // For expenses, increase is bad (red), decrease is good (green)
       return change > 0 ? 'text-red-600' : 'text-green-600';
     } else {
-      // For revenue, profitability, cash flow, increase is good (green), decrease is bad (red)
+      // For revenue, profitability, free cash flow, increase is good (green), decrease is bad (red)
       return change > 0 ? 'text-green-600' : 'text-red-600';
     }
   };

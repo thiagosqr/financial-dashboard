@@ -9,7 +9,7 @@ Generate a narrative insight for the {metric} metric based on the following data
 - Recent trend: {trend}
 - A root cause analysis of which segements of the data contributed more to this change.
 
-Provide for each metric Revenue, Expenses, Profability, Cash Flow:
+Provide for each metric Revenue, Expenses, Profability, Free Cash Flow:
 1. A clear narrative explaining what the numbers mean
 2. The trend direction (increasing, decreasing, stable)
 3. A root cause analysis, scanning your dataset to find the factors with the largest changes that can explain the rise or fall of a key metric. The process involves identifying contributing factors, ranking them by their impact, and presenting the most likely causes to help users understand "why" things happened and take informed action
@@ -48,14 +48,15 @@ Recommendations:
 - Explore refinancing offers from integrated banking partners.
 -Recommend capital injection strategies (equity raise, shareholder loans) if debt serviceability risk is high.
 
-4. Cashflow Stability
-Insight: Operating cashflows were negative for two consecutive quarters despite accounting profits.
+4. Free Cash Flow Stability
+Insight: Free cash flow was negative for two consecutive quarters due to high capital expenditure despite positive operating cash flows.
 Narrative:
-“Although the entity reports positive accounting earnings, cashflow pressures indicate possible over-reliance on credit terms. Sustained negative operating cashflows may constrain future operations.”
+"Although the entity reports positive operating cash flows, significant capital expenditure has resulted in negative free cash flow. This indicates that while day-to-day operations are generating cash, the business is investing heavily in growth assets."
 Recommendations: 
--Automatically reorder payment priorities (delay supplier payments where credit terms allow, prioritise payroll & tax).
--Set up invoice factoring / early payment requests via integrated banks.
--Suggest expense pruning by auto-flagging recurring subscriptions or suppliers with low ROI.
+-Review capital expenditure timing and necessity to optimize free cash flow.
+-Consider phasing capital investments to maintain positive free cash flow.
+-Evaluate the return on investment for recent capital expenditures.
+-Implement free cash flow forecasting to better plan capital investments.
 
 5. Inventory and Efficiency
 Insight: Inventory turnover slowed from 8x to 5x per year, suggesting overstocking.

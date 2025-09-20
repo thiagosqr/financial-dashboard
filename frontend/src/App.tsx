@@ -89,7 +89,7 @@ const App: React.FC = () => {
       revenue: '#10B981', // green
       expenses: '#EF4444', // red
       income: '#8B5CF6', // purple
-      cash_flow: '#7C3AED', // darker purple
+      free_cash_flow: '#7C3AED', // darker purple
     };
     return colors[metric as keyof typeof colors] || '#8B5CF6';
   };
@@ -99,7 +99,7 @@ const App: React.FC = () => {
       revenue: '💰',
       expenses: '💸',
       income: '📈',
-      cash_flow: '💳',
+      free_cash_flow: '💳',
     };
     return icons[metric as keyof typeof icons] || '📊';
   };
@@ -109,7 +109,7 @@ const App: React.FC = () => {
       revenue: 'Revenue',
       expenses: 'Expenses',
       income: 'Income',
-      cash_flow: 'Cash Flow',
+      free_cash_flow: 'Free Cash Flow',
     };
     return displayNames[metric as keyof typeof displayNames] || metric.charAt(0).toUpperCase() + metric.slice(1).replace('_', ' ');
   };
@@ -119,7 +119,7 @@ const App: React.FC = () => {
       revenue: 'bg-green-500',
       expenses: 'bg-red-500',
       income: 'bg-purple-500',
-      cash_flow: 'bg-purple-600',
+      free_cash_flow: 'bg-purple-600',
     };
     return colors[metric as keyof typeof colors] || 'bg-purple-500';
   };
