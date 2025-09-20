@@ -190,7 +190,7 @@ Based on this analysis, provide specific, actionable recommendations for how the
                     time_series_data=analysis_data.get('time_series_values', []),
                     time_series_dates=analysis_data.get('time_series_dates', []),
                     top_contributing_factors=analysis_data.get('top_contributing_factors', []),
-                    narrative=narratives.get(narrative_key, {}).get('narrative', f"Analysis for {metric_name}")
+                    narrative=getattr(narratives.get(narrative_key), 'narrative', f"Analysis for {metric_name}") if narratives.get(narrative_key) else f"Analysis for {metric_name}"
                 )
                 
                 # Generate recommendation
