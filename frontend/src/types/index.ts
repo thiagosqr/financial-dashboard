@@ -8,31 +8,32 @@ export interface FinancialTile {
 }
 
 export interface DashboardData {
-  tiles: {
+  tiles?: {
     revenue: FinancialTile;
     expenses: FinancialTile;
-    profitability: FinancialTile;
+    income: FinancialTile;
     cash_flow: FinancialTile;
   };
-  time_series: {
+  time_series?: {
     dates: string[];
     revenue: number[];
     expenses: number[];
-    profitability: number[];
+    income: number[];
     cash_flow: number[];
   };
-  root_cause_analysis: {
+  root_cause_analysis?: {
     revenue: RootCauseAnalysis;
     expenses: RootCauseAnalysis;
-    profitability: RootCauseAnalysis;
+    income: RootCauseAnalysis;
     cash_flow: RootCauseAnalysis;
   };
-  insights: Insights;
-  summary: {
+  insights?: Insights;
+  summary?: {
     total_transactions: number;
     current_period: string;
     previous_period: string;
   };
+  error?: string;
 }
 
 export interface FinancialInsight {

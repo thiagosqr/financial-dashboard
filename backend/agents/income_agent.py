@@ -1,0 +1,565 @@
+"""
+Income Analysis Agent for calculating and analyzing income/profitability metrics
+"""
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Any, TypedDict
+from datetime import datetime, timedelta
+from pydantic import BaseModel, Field
+from agents.data_ingest_agent import TransactionData
+
+
+class IncomeMetrics(BaseModel):
+    """Schema for income/profitability metrics"""
+    net_income: float = Field(description="Net income (profit/loss) for the period")
+    period: str = Field(description="Period being analyzed (e.g., '2024-01')")
+    income_pct_change: float = Field(description="Income percentage change from previous period")
+    gross_profit: float = Field(description="Gross profit for the period")
+    operating_income: float = Field(description="Operating income for the period")
+    profit_margin: float = Field(description="Profit margin percentage")
+    gross_margin: float = Field(description="Gross margin percentage")
+
+
+class IncomeComparison(BaseModel):
+    """Schema for income month-over-month comparison"""
+    current_month: IncomeMetrics = Field(description="Current month income metrics")
+    previous_month: IncomeMetrics = Field(description="Previous month income metrics")
+    income_change: float = Field(description="Income change from previous month")
+    gross_profit_change: float = Field(description="Gross profit change from previous month")
+    operating_income_change: float = Field(description="Operating income change from previous month")
+
+
+class IncomeTimeSeriesData(BaseModel):
+    """Schema for income time series data"""
+    dates: List[str] = Field(description="List of dates in YYYY-MM format")
+    net_income: List[float] = Field(description="Net income values for each month")
+    gross_profit: List[float] = Field(description="Gross profit values for each month")
+    operating_income: List[float] = Field(description="Operating income values for each month")
+    income_pct_changes: List[float] = Field(description="Income percentage changes month-over-month")
+    profit_margins: List[float] = Field(description="Profit margin percentages for each month")
+
+
+class IncomeFactor(BaseModel):
+    """Schema for individual income contributing factors"""
+    factor_name: str = Field(description="Name of the contributing factor")
+    factor_type: str = Field(description="Type of factor (Revenue/Expense - category, account, etc.)")
+    current_value: float = Field(description="Current period value")
+    previous_value: float = Field(description="Previous period value")
+    change: float = Field(description="Absolute change")
+    change_percent: float = Field(description="Percentage change")
+    impact_score: float = Field(description="Impact score (0-100) based on contribution to total change")
+    rank: int = Field(description="Ranking by impact (1 = highest impact)")
+
+
+class IncomeRootCauseAnalysis(BaseModel):
+    """Schema for income root cause analysis results"""
+    metric: str = Field(description="Income/Profitability")
+    current_period_value: float = Field(description="Current period income value")
+    previous_period_value: float = Field(description="Previous period income value")
+    total_change: float = Field(description="Total change in income")
+    change_percent: float = Field(description="Percentage change")
+    trend_direction: str = Field(description="Trend direction (increasing, decreasing, stable)")
+    top_contributing_factors: List[IncomeFactor] = Field(description="Top contributing factors ranked by impact")
+    analysis_summary: str = Field(description="Summary of the income analysis")
+    recommendations: List[str] = Field(description="Actionable recommendations based on analysis")
+
+
+class IncomeAnalysisAgent:
+    """Agent responsible for income/profitability analysis using pandas calculations"""
+    
+    def __init__(self):
+        self.revenue_categories = ['revenue/sales', 'interest income', 'other income', 'gst collected']
+        self.cost_of_goods_categories = ['cost of goods sold', 'cogs', 'inventory', 'materials', 'direct costs']
+        self.operating_expense_categories = ['office supplies', 'utilities', 'marketing', 'travel', 'professional services', 'salaries', 'rent']
+    
+    def _transactions_to_dataframe(self, transactions: List[TransactionData]) -> pd.DataFrame:
+        """Convert transactions to pandas DataFrame for analysis"""
+        data = []
+        for t in transactions:
+            data.append({
+                'date': t.date,
+                'description': t.description,
+                'amount': t.amount,
+                'category': t.category,
+                'account': t.account
+            })
+        
+        df = pd.DataFrame(data)
+        df['date'] = pd.to_datetime(df['date'])
+        df['year_month'] = df['date'].dt.to_period('M')
+        return df
+    
+    def _is_cost_of_goods_sold(self, category: str, description: str) -> bool:
+        """Determine if a transaction represents cost of goods sold"""
+        category_lower = category.lower()
+        description_lower = description.lower()
+        return any(cogs_cat in category_lower or cogs_cat in description_lower 
+                  for cogs_cat in self.cost_of_goods_categories)
+    
+    def _is_operating_expense(self, category: str) -> bool:
+        """Determine if an expense is operating expense based on category"""
+        category_lower = category.lower()
+        return any(op_cat in category_lower for op_cat in self.operating_expense_categories)
+    
+    def calculate_monthly_income_metrics(self, transactions: List[TransactionData], 
+                                       target_month: str = None, 
+                                       previous_month: str = None) -> IncomeMetrics:
+        """Calculate income metrics for a specific month using pandas"""
+        if target_month is None:
+            target_month = datetime.now().strftime('%Y-%m')
+        
+        df = self._transactions_to_dataframe(transactions)
+        
+        # Filter for target month
+        target_period = pd.Period(target_month)
+        month_df = df[df['year_month'] == target_period]
+        
+        if month_df.empty:
+            return IncomeMetrics(
+                net_income=0.0,
+                period=target_month,
+                income_pct_change=0.0,
+                gross_profit=0.0,
+                operating_income=0.0,
+                profit_margin=0.0,
+                gross_margin=0.0
+            )
+        
+        # Calculate income components
+        revenue_df = month_df[month_df['category'].str.lower().isin(self.revenue_categories)]
+        expense_df = month_df[~month_df['category'].str.lower().isin(self.revenue_categories)]
+        
+        revenue = revenue_df['amount'].sum()
+        total_expenses = expense_df['amount'].sum()
+        net_income = revenue - total_expenses
+        
+        # Calculate COGS and gross profit
+        cogs_df = expense_df[expense_df.apply(
+            lambda row: self._is_cost_of_goods_sold(row['category'], row['description']), axis=1
+        )]
+        cogs = cogs_df['amount'].sum()
+        gross_profit = revenue - cogs
+        
+        # Calculate operating expenses and operating income
+        operating_expense_df = expense_df[expense_df['category'].apply(self._is_operating_expense)]
+        operating_expenses = operating_expense_df['amount'].sum()
+        operating_income = gross_profit - operating_expenses
+        
+        # Calculate margins
+        profit_margin = (net_income / revenue * 100) if revenue > 0 else 0.0
+        gross_margin = (gross_profit / revenue * 100) if revenue > 0 else 0.0
+        
+        # Calculate percentage changes if previous month data is available
+        income_pct_change = 0.0
+        
+        if previous_month:
+            prev_period = pd.Period(previous_month)
+            prev_month_df = df[df['year_month'] == prev_period]
+            
+            if not prev_month_df.empty:
+                prev_revenue_df = prev_month_df[prev_month_df['category'].str.lower().isin(self.revenue_categories)]
+                prev_expense_df = prev_month_df[~prev_month_df['category'].str.lower().isin(self.revenue_categories)]
+                
+                prev_revenue = prev_revenue_df['amount'].sum()
+                prev_total_expenses = prev_expense_df['amount'].sum()
+                prev_net_income = prev_revenue - prev_total_expenses
+                
+                income_pct_change = self._calculate_percentage_change(net_income, prev_net_income)
+        
+        return IncomeMetrics(
+            net_income=net_income,
+            period=target_month,
+            income_pct_change=income_pct_change,
+            gross_profit=gross_profit,
+            operating_income=operating_income,
+            profit_margin=profit_margin,
+            gross_margin=gross_margin
+        )
+    
+    def _calculate_percentage_change(self, current: float, previous: float) -> float:
+        """Calculate percentage change between current and previous values"""
+        if previous == 0:
+            return 0.0 if current == 0 else 100.0
+        return ((current - previous) / abs(previous)) * 100
+    
+    def calculate_month_over_month_comparison(self, transactions: List[TransactionData]) -> IncomeComparison:
+        """Calculate month-over-month income comparison using pandas"""
+        if not transactions:
+            empty_metrics = IncomeMetrics(
+                net_income=0.0,
+                period="unknown",
+                income_pct_change=0.0,
+                gross_profit=0.0,
+                operating_income=0.0,
+                profit_margin=0.0,
+                gross_margin=0.0
+            )
+            return IncomeComparison(
+                current_month=empty_metrics,
+                previous_month=empty_metrics,
+                income_change=0.0,
+                gross_profit_change=0.0,
+                operating_income_change=0.0
+            )
+        
+        df = self._transactions_to_dataframe(transactions)
+        available_months = sorted(df['year_month'].unique())
+        
+        if len(available_months) < 2:
+            current_month = available_months[0].strftime('%Y-%m') if available_months else datetime.now().strftime('%Y-%m')
+            current_metrics = self.calculate_monthly_income_metrics(transactions, current_month)
+            previous_metrics = IncomeMetrics(
+                net_income=0.0,
+                period="unknown",
+                income_pct_change=0.0,
+                gross_profit=0.0,
+                operating_income=0.0,
+                profit_margin=0.0,
+                gross_margin=0.0
+            )
+        else:
+            current_period = available_months[-1]
+            previous_period = available_months[-2]
+            
+            current_month = current_period.strftime('%Y-%m')
+            previous_month = previous_period.strftime('%Y-%m')
+            
+            current_metrics = self.calculate_monthly_income_metrics(transactions, current_month, previous_month)
+            previous_metrics = self.calculate_monthly_income_metrics(transactions, previous_month)
+        
+        # Calculate changes
+        income_change = current_metrics.net_income - previous_metrics.net_income
+        gross_profit_change = current_metrics.gross_profit - previous_metrics.gross_profit
+        operating_income_change = current_metrics.operating_income - previous_metrics.operating_income
+        
+        return IncomeComparison(
+            current_month=current_metrics,
+            previous_month=previous_metrics,
+            income_change=income_change,
+            gross_profit_change=gross_profit_change,
+            operating_income_change=operating_income_change
+        )
+    
+    def generate_time_series_data(self, transactions: List[TransactionData], 
+                                months_back: int = 12) -> IncomeTimeSeriesData:
+        """Generate income time series data for the last N months using pandas"""
+        if not transactions:
+            return IncomeTimeSeriesData(
+                dates=[],
+                net_income=[],
+                gross_profit=[],
+                operating_income=[],
+                income_pct_changes=[],
+                profit_margins=[]
+            )
+        
+        df = self._transactions_to_dataframe(transactions)
+        available_months = sorted(df['year_month'].unique())
+        if len(available_months) > months_back:
+            available_months = available_months[-months_back:]
+        
+        dates = []
+        net_income_data = []
+        gross_profit_data = []
+        operating_income_data = []
+        income_pct_changes = []
+        profit_margins = []
+        
+        for i, period in enumerate(available_months):
+            month_str = period.strftime('%Y-%m')
+            dates.append(month_str)
+            
+            prev_month = None
+            if i > 0:
+                prev_month = available_months[i-1].strftime('%Y-%m')
+            
+            metrics = self.calculate_monthly_income_metrics(transactions, month_str, prev_month)
+            net_income_data.append(metrics.net_income)
+            gross_profit_data.append(metrics.gross_profit)
+            operating_income_data.append(metrics.operating_income)
+            income_pct_changes.append(metrics.income_pct_change)
+            profit_margins.append(metrics.profit_margin)
+        
+        return IncomeTimeSeriesData(
+            dates=dates,
+            net_income=net_income_data,
+            gross_profit=gross_profit_data,
+            operating_income=operating_income_data,
+            income_pct_changes=income_pct_changes,
+            profit_margins=profit_margins
+        )
+    
+    def analyze_income_root_cause(self, transactions: List[TransactionData]) -> IncomeRootCauseAnalysis:
+        """Perform root cause analysis for income/profitability changes"""
+        comparison = self.calculate_month_over_month_comparison(transactions)
+        
+        # Get current and previous period data
+        df = self._transactions_to_dataframe(transactions)
+        current_period = pd.Period(comparison.current_month.period)
+        previous_period = pd.Period(comparison.previous_month.period)
+        
+        current_df = df[df['year_month'] == current_period]
+        previous_df = df[df['year_month'] == previous_period]
+        
+        factors = []
+        
+        # Income is derived from revenue - expenses, so analyze both components
+        current_revenue = current_df[current_df['category'].str.lower().isin(self.revenue_categories)]
+        previous_revenue = previous_df[previous_df['category'].str.lower().isin(self.revenue_categories)]
+        current_expenses = current_df[~current_df['category'].str.lower().isin(self.revenue_categories)]
+        previous_expenses = previous_df[~previous_df['category'].str.lower().isin(self.revenue_categories)]
+        
+        # Revenue impact factors (positive impact on income)
+        revenue_factors = self._analyze_by_category(current_revenue, previous_revenue, "category")
+        for factor in revenue_factors:
+            factor.factor_type = f"Revenue - {factor.factor_type}"
+        factors.extend(revenue_factors)
+        
+        # Expense impact factors (negative impact on income)
+        expense_factors = self._analyze_by_category(current_expenses, previous_expenses, "category")
+        for factor in expense_factors:
+            factor.factor_type = f"Expense - {factor.factor_type}"
+            factor.change = -factor.change  # Expenses reduce income
+        factors.extend(expense_factors)
+        
+        # Analyze top revenue and expense sources
+        revenue_desc_factors = self._analyze_by_description(current_revenue, previous_revenue, "description")
+        for factor in revenue_desc_factors:
+            factor.factor_type = f"Revenue Source - {factor.factor_type}"
+        factors.extend(revenue_desc_factors)
+        
+        expense_desc_factors = self._analyze_by_description(current_expenses, previous_expenses, "description")
+        for factor in expense_desc_factors:
+            factor.factor_type = f"Expense Source - {factor.factor_type}"
+            factor.change = -factor.change  # Expenses reduce income
+        factors.extend(expense_desc_factors)
+        
+        # Rank factors by impact
+        ranked_factors = self._rank_factors_by_impact(factors, comparison.income_change)
+        
+        # Generate analysis summary and recommendations
+        summary = self._generate_analysis_summary(comparison, ranked_factors)
+        recommendations = self._generate_recommendations(ranked_factors, comparison)
+        
+        return IncomeRootCauseAnalysis(
+            metric="Income/Profitability",
+            current_period_value=comparison.current_month.net_income,
+            previous_period_value=comparison.previous_month.net_income,
+            total_change=comparison.income_change,
+            change_percent=comparison.current_month.income_pct_change,
+            trend_direction="increasing" if comparison.income_change > 0 else "decreasing" if comparison.income_change < 0 else "stable",
+            top_contributing_factors=ranked_factors[:5],
+            analysis_summary=summary,
+            recommendations=recommendations
+        )
+    
+    def _analyze_by_category(self, current_df: pd.DataFrame, previous_df: pd.DataFrame, 
+                            column: str) -> List[IncomeFactor]:
+        """Analyze factors by a specific column (category, account, etc.)"""
+        factors = []
+        
+        current_totals = current_df.groupby(column)['amount'].sum()
+        previous_totals = previous_df.groupby(column)['amount'].sum()
+        
+        all_values = set(current_totals.index) | set(previous_totals.index)
+        
+        for value in all_values:
+            current_val = current_totals.get(value, 0.0)
+            previous_val = previous_totals.get(value, 0.0)
+            change = current_val - previous_val
+            
+            if abs(change) > 0.01:
+                change_percent = self._calculate_percentage_change(current_val, previous_val)
+                
+                factor = IncomeFactor(
+                    factor_name=value,
+                    factor_type=column.title(),
+                    current_value=current_val,
+                    previous_value=previous_val,
+                    change=change,
+                    change_percent=change_percent,
+                    impact_score=0.0,
+                    rank=0
+                )
+                factors.append(factor)
+        
+        return factors
+    
+    def _analyze_by_description(self, current_df: pd.DataFrame, previous_df: pd.DataFrame, 
+                               column: str) -> List[IncomeFactor]:
+        """Analyze factors by description (top contributors)"""
+        factors = []
+        
+        # Get top 10 descriptions by amount in current period
+        current_top = current_df.groupby(column)['amount'].sum().abs().nlargest(10)
+        previous_totals = previous_df.groupby(column)['amount'].sum()
+        
+        for desc in current_top.index:
+            current_val = current_df[current_df[column] == desc]['amount'].sum()
+            previous_val = previous_totals.get(desc, 0.0)
+            change = current_val - previous_val
+            
+            if abs(change) > 0.01:
+                change_percent = self._calculate_percentage_change(current_val, previous_val)
+                
+                factor = IncomeFactor(
+                    factor_name=desc,
+                    factor_type=f"{column.title()} (Top Contributor)",
+                    current_value=current_val,
+                    previous_value=previous_val,
+                    change=change,
+                    change_percent=change_percent,
+                    impact_score=0.0,
+                    rank=0
+                )
+                factors.append(factor)
+        
+        return factors
+    
+    def _rank_factors_by_impact(self, factors: List[IncomeFactor], total_change: float) -> List[IncomeFactor]:
+        """Rank factors by their impact on the total change"""
+        if abs(total_change) < 0.01:
+            return factors
+        
+        for factor in factors:
+            factor.impact_score = abs(factor.change / total_change) * 100 if total_change != 0 else 0
+        
+        sorted_factors = sorted(factors, key=lambda x: x.impact_score, reverse=True)
+        
+        for i, factor in enumerate(sorted_factors):
+            factor.rank = i + 1
+        
+        return sorted_factors
+    
+    def _generate_analysis_summary(self, comparison: IncomeComparison, 
+                                 factors: List[IncomeFactor]) -> str:
+        """Generate analysis summary for income"""
+        direction = "improved" if comparison.income_change > 0 else "declined" if comparison.income_change < 0 else "remained stable"
+        
+        if not factors:
+            return f"Net income {direction} by {abs(comparison.income_change):,.2f} ({abs(comparison.current_month.income_pct_change):.1f}%) with no significant contributing factors identified."
+        
+        top_factor = factors[0]
+        summary = f"Net income {direction} by {abs(comparison.income_change):,.2f} ({abs(comparison.current_month.income_pct_change):.1f}%). "
+        summary += f"Primary driver: {top_factor.factor_name} ({top_factor.factor_type}) with {top_factor.impact_score:.1f}% impact."
+        
+        if len(factors) > 1:
+            secondary_factor = factors[1]
+            summary += f" Secondary driver: {secondary_factor.factor_name} ({secondary_factor.impact_score:.1f}% impact)."
+        
+        return summary
+    
+    def _generate_recommendations(self, factors: List[IncomeFactor], comparison: IncomeComparison) -> List[str]:
+        """Generate recommendations for income/profitability improvement"""
+        recommendations = []
+        
+        if not factors:
+            recommendations.append("Focus on revenue growth and cost management balance.")
+            return recommendations
+        
+        # Basic recommendations based on factors
+        revenue_factors = [f for f in factors if f.factor_type.startswith("Revenue")]
+        expense_factors = [f for f in factors if f.factor_type.startswith("Expense")]
+        
+        if revenue_factors:
+            positive_revenue = [f for f in revenue_factors if f.change > 0]
+            negative_revenue = [f for f in revenue_factors if f.change < 0]
+            
+            if positive_revenue:
+                recommendations.append("Scale successful revenue growth strategies.")
+            if negative_revenue:
+                recommendations.append("Address declining revenue sources immediately.")
+        
+        if expense_factors:
+            increasing_expenses = [f for f in expense_factors if f.change < 0]  # Remember we negated expense changes
+            if increasing_expenses:
+                recommendations.append("Implement cost control measures for increasing expenses.")
+        
+        # Margin-based recommendations
+        current_profit_margin = comparison.current_month.profit_margin
+        previous_profit_margin = comparison.previous_month.profit_margin
+        
+        if current_profit_margin < 0:
+            recommendations.append("Critical: Address negative profit margins immediately.")
+        elif current_profit_margin < 10:
+            recommendations.append("Focus on improving low profit margins through cost optimization.")
+        elif current_profit_margin > previous_profit_margin:
+            recommendations.append("Maintain and build upon improving profit margins.")
+        
+        # Gross margin recommendations
+        current_gross_margin = comparison.current_month.gross_margin
+        if current_gross_margin < 30:
+            recommendations.append("Review pricing strategy and cost of goods sold.")
+        
+        # Operating income recommendations
+        if comparison.current_month.operating_income < comparison.current_month.net_income:
+            recommendations.append("Review non-operating expenses and income sources.")
+        
+        # General profitability recommendations
+        recommendations.append("Implement regular profitability analysis and monitoring.")
+        recommendations.append("Focus on high-margin products and services.")
+        recommendations.append("Optimize the revenue-to-expense ratio through strategic planning.")
+        
+        return recommendations
+    
+    def get_income_summary(self, transactions: List[TransactionData]) -> Dict[str, Any]:
+        """Get comprehensive income summary with all metrics"""
+        comparison = self.calculate_month_over_month_comparison(transactions)
+        time_series = self.generate_time_series_data(transactions, months_back=6)
+        root_cause = self.analyze_income_root_cause(transactions)
+        
+        return {
+            "current_month": {
+                "period": comparison.current_month.period,
+                "net_income": {
+                    "value": comparison.current_month.net_income,
+                    "previous_value": comparison.previous_month.net_income,
+                    "change": comparison.income_change,
+                    "percentage_change": comparison.current_month.income_pct_change
+                },
+                "gross_profit": {
+                    "value": comparison.current_month.gross_profit,
+                    "previous_value": comparison.previous_month.gross_profit,
+                    "change": comparison.gross_profit_change
+                },
+                "operating_income": {
+                    "value": comparison.current_month.operating_income,
+                    "previous_value": comparison.previous_month.operating_income,
+                    "change": comparison.operating_income_change
+                },
+                "profit_margin": {
+                    "value": comparison.current_month.profit_margin,
+                    "previous_value": comparison.previous_month.profit_margin,
+                    "change": comparison.current_month.profit_margin - comparison.previous_month.profit_margin
+                },
+                "gross_margin": {
+                    "value": comparison.current_month.gross_margin,
+                    "previous_value": comparison.previous_month.gross_margin,
+                    "change": comparison.current_month.gross_margin - comparison.previous_month.gross_margin
+                }
+            },
+            "time_series": {
+                "dates": time_series.dates,
+                "net_income": time_series.net_income,
+                "gross_profit": time_series.gross_profit,
+                "operating_income": time_series.operating_income,
+                "income_pct_changes": time_series.income_pct_changes,
+                "profit_margins": time_series.profit_margins
+            },
+            "root_cause_analysis": {
+                "analysis_summary": root_cause.analysis_summary,
+                "trend_direction": root_cause.trend_direction,
+                "top_factors": [
+                    {
+                        "factor_name": factor.factor_name,
+                        "factor_type": factor.factor_type,
+                        "change": factor.change,
+                        "change_percent": factor.change_percent,
+                        "impact_score": factor.impact_score,
+                        "rank": factor.rank
+                    }
+                    for factor in root_cause.top_contributing_factors
+                ],
+                "recommendations": root_cause.recommendations
+            }
+        }

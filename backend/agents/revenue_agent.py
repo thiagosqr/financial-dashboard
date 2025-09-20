@@ -1,0 +1,505 @@
+"""
+Revenue Analysis Agent for calculating and analyzing revenue metrics
+"""
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Any, TypedDict
+from datetime import datetime, timedelta
+from pydantic import BaseModel, Field
+from agents.data_ingest_agent import TransactionData
+
+
+class RevenueMetrics(BaseModel):
+    """Schema for revenue metrics"""
+    revenue: float = Field(description="Total revenue for the period")
+    period: str = Field(description="Period being analyzed (e.g., '2024-01')")
+    revenue_pct_change: float = Field(description="Revenue percentage change from previous period")
+    gross_revenue: float = Field(description="Gross revenue before any deductions")
+    recurring_revenue: float = Field(description="Recurring revenue component")
+    one_time_revenue: float = Field(description="One-time revenue component")
+
+
+class RevenueComparison(BaseModel):
+    """Schema for revenue month-over-month comparison"""
+    current_month: RevenueMetrics = Field(description="Current month revenue metrics")
+    previous_month: RevenueMetrics = Field(description="Previous month revenue metrics")
+    revenue_change: float = Field(description="Revenue change from previous month")
+    gross_revenue_change: float = Field(description="Gross revenue change from previous month")
+    recurring_revenue_change: float = Field(description="Recurring revenue change from previous month")
+
+
+class RevenueTimeSeriesData(BaseModel):
+    """Schema for revenue time series data"""
+    dates: List[str] = Field(description="List of dates in YYYY-MM format")
+    revenue: List[float] = Field(description="Revenue values for each month")
+    gross_revenue: List[float] = Field(description="Gross revenue values for each month")
+    recurring_revenue: List[float] = Field(description="Recurring revenue values for each month")
+    revenue_pct_changes: List[float] = Field(description="Revenue percentage changes month-over-month")
+
+
+class RevenueFactor(BaseModel):
+    """Schema for individual revenue contributing factors"""
+    factor_name: str = Field(description="Name of the contributing factor")
+    factor_type: str = Field(description="Type of factor (category, description, account, etc.)")
+    current_value: float = Field(description="Current period value")
+    previous_value: float = Field(description="Previous period value")
+    change: float = Field(description="Absolute change")
+    change_percent: float = Field(description="Percentage change")
+    impact_score: float = Field(description="Impact score (0-100) based on contribution to total change")
+    rank: int = Field(description="Ranking by impact (1 = highest impact)")
+
+
+class RevenueRootCauseAnalysis(BaseModel):
+    """Schema for revenue root cause analysis results"""
+    metric: str = Field(description="Revenue")
+    current_period_value: float = Field(description="Current period revenue value")
+    previous_period_value: float = Field(description="Previous period revenue value")
+    total_change: float = Field(description="Total change in revenue")
+    change_percent: float = Field(description="Percentage change")
+    trend_direction: str = Field(description="Trend direction (increasing, decreasing, stable)")
+    top_contributing_factors: List[RevenueFactor] = Field(description="Top contributing factors ranked by impact")
+    analysis_summary: str = Field(description="Summary of the revenue analysis")
+    recommendations: List[str] = Field(description="Actionable recommendations based on analysis")
+
+
+class RevenueAnalysisAgent:
+    """Agent responsible for revenue analysis using pandas calculations"""
+    
+    def __init__(self):
+        self.revenue_categories = ['revenue/sales', 'interest income', 'other income', 'gst collected']
+        self.recurring_indicators = ['subscription', 'recurring', 'monthly', 'annual', 'membership']
+    
+    def _transactions_to_dataframe(self, transactions: List[TransactionData]) -> pd.DataFrame:
+        """Convert transactions to pandas DataFrame for analysis"""
+        data = []
+        for t in transactions:
+            data.append({
+                'date': t.date,
+                'description': t.description,
+                'amount': t.amount,
+                'category': t.category,
+                'account': t.account
+            })
+        
+        df = pd.DataFrame(data)
+        df['date'] = pd.to_datetime(df['date'])
+        df['year_month'] = df['date'].dt.to_period('M')
+        return df
+    
+    def _is_recurring_revenue(self, description: str) -> bool:
+        """Determine if a transaction represents recurring revenue"""
+        description_lower = description.lower()
+        return any(indicator in description_lower for indicator in self.recurring_indicators)
+    
+    def calculate_monthly_revenue_metrics(self, transactions: List[TransactionData], 
+                                        target_month: str = None, 
+                                        previous_month: str = None) -> RevenueMetrics:
+        """Calculate revenue metrics for a specific month using pandas"""
+        if target_month is None:
+            target_month = datetime.now().strftime('%Y-%m')
+        
+        df = self._transactions_to_dataframe(transactions)
+        
+        # Filter for target month and revenue transactions
+        target_period = pd.Period(target_month)
+        month_df = df[df['year_month'] == target_period]
+        revenue_df = month_df[month_df['category'].str.lower().isin(self.revenue_categories)]
+        
+        if revenue_df.empty:
+            return RevenueMetrics(
+                revenue=0.0,
+                period=target_month,
+                revenue_pct_change=0.0,
+                gross_revenue=0.0,
+                recurring_revenue=0.0,
+                one_time_revenue=0.0
+            )
+        
+        # Calculate revenue metrics
+        revenue = revenue_df['amount'].sum()
+        gross_revenue = revenue  # Simplified - could include adjustments
+        
+        # Categorize recurring vs one-time revenue
+        recurring_revenue = revenue_df[revenue_df['description'].apply(self._is_recurring_revenue)]['amount'].sum()
+        one_time_revenue = revenue - recurring_revenue
+        
+        # Calculate percentage changes if previous month data is available
+        revenue_pct_change = 0.0
+        
+        if previous_month:
+            prev_period = pd.Period(previous_month)
+            prev_month_df = df[df['year_month'] == prev_period]
+            prev_revenue_df = prev_month_df[prev_month_df['category'].str.lower().isin(self.revenue_categories)]
+            
+            if not prev_revenue_df.empty:
+                prev_revenue = prev_revenue_df['amount'].sum()
+                revenue_pct_change = self._calculate_percentage_change(revenue, prev_revenue)
+        
+        return RevenueMetrics(
+            revenue=revenue,
+            period=target_month,
+            revenue_pct_change=revenue_pct_change,
+            gross_revenue=gross_revenue,
+            recurring_revenue=recurring_revenue,
+            one_time_revenue=one_time_revenue
+        )
+    
+    def _calculate_percentage_change(self, current: float, previous: float) -> float:
+        """Calculate percentage change between current and previous values"""
+        if previous == 0:
+            return 0.0 if current == 0 else 100.0
+        return ((current - previous) / abs(previous)) * 100
+    
+    def calculate_month_over_month_comparison(self, transactions: List[TransactionData]) -> RevenueComparison:
+        """Calculate month-over-month revenue comparison using pandas"""
+        if not transactions:
+            empty_metrics = RevenueMetrics(
+                revenue=0.0,
+                period="unknown",
+                revenue_pct_change=0.0,
+                gross_revenue=0.0,
+                recurring_revenue=0.0,
+                one_time_revenue=0.0
+            )
+            return RevenueComparison(
+                current_month=empty_metrics,
+                previous_month=empty_metrics,
+                revenue_change=0.0,
+                gross_revenue_change=0.0,
+                recurring_revenue_change=0.0
+            )
+        
+        df = self._transactions_to_dataframe(transactions)
+        available_months = sorted(df['year_month'].unique())
+        
+        if len(available_months) < 2:
+            current_month = available_months[0].strftime('%Y-%m') if available_months else datetime.now().strftime('%Y-%m')
+            current_metrics = self.calculate_monthly_revenue_metrics(transactions, current_month)
+            previous_metrics = RevenueMetrics(
+                revenue=0.0,
+                period="unknown",
+                revenue_pct_change=0.0,
+                gross_revenue=0.0,
+                recurring_revenue=0.0,
+                one_time_revenue=0.0
+            )
+        else:
+            current_period = available_months[-1]
+            previous_period = available_months[-2]
+            
+            current_month = current_period.strftime('%Y-%m')
+            previous_month = previous_period.strftime('%Y-%m')
+            
+            current_metrics = self.calculate_monthly_revenue_metrics(transactions, current_month, previous_month)
+            previous_metrics = self.calculate_monthly_revenue_metrics(transactions, previous_month)
+        
+        # Calculate changes
+        revenue_change = current_metrics.revenue - previous_metrics.revenue
+        gross_revenue_change = current_metrics.gross_revenue - previous_metrics.gross_revenue
+        recurring_revenue_change = current_metrics.recurring_revenue - previous_metrics.recurring_revenue
+        
+        return RevenueComparison(
+            current_month=current_metrics,
+            previous_month=previous_metrics,
+            revenue_change=revenue_change,
+            gross_revenue_change=gross_revenue_change,
+            recurring_revenue_change=recurring_revenue_change
+        )
+    
+    def generate_time_series_data(self, transactions: List[TransactionData], 
+                                months_back: int = 12) -> RevenueTimeSeriesData:
+        """Generate revenue time series data for the last N months using pandas"""
+        if not transactions:
+            return RevenueTimeSeriesData(
+                dates=[],
+                revenue=[],
+                gross_revenue=[],
+                recurring_revenue=[],
+                revenue_pct_changes=[]
+            )
+        
+        df = self._transactions_to_dataframe(transactions)
+        available_months = sorted(df['year_month'].unique())
+        if len(available_months) > months_back:
+            available_months = available_months[-months_back:]
+        
+        dates = []
+        revenue_data = []
+        gross_revenue_data = []
+        recurring_revenue_data = []
+        revenue_pct_changes = []
+        
+        for i, period in enumerate(available_months):
+            month_str = period.strftime('%Y-%m')
+            dates.append(month_str)
+            
+            prev_month = None
+            if i > 0:
+                prev_month = available_months[i-1].strftime('%Y-%m')
+            
+            metrics = self.calculate_monthly_revenue_metrics(transactions, month_str, prev_month)
+            revenue_data.append(metrics.revenue)
+            gross_revenue_data.append(metrics.gross_revenue)
+            recurring_revenue_data.append(metrics.recurring_revenue)
+            revenue_pct_changes.append(metrics.revenue_pct_change)
+        
+        return RevenueTimeSeriesData(
+            dates=dates,
+            revenue=revenue_data,
+            gross_revenue=gross_revenue_data,
+            recurring_revenue=recurring_revenue_data,
+            revenue_pct_changes=revenue_pct_changes
+        )
+    
+    def identify_top_revenue_sources(self, transactions: List[TransactionData]) -> Dict[str, float]:
+        """Identify top revenue sources using pandas"""
+        df = self._transactions_to_dataframe(transactions)
+        
+        # Filter for revenue transactions
+        revenue_mask = df['category'].str.lower().isin(self.revenue_categories)
+        revenue_df = df[revenue_mask]
+        
+        if revenue_df.empty:
+            return {}
+        
+        # Group by description and sum amounts
+        source_totals = revenue_df.groupby('description')['amount'].sum().to_dict()
+        
+        # Sort by amount and return top 10
+        sorted_sources = sorted(source_totals.items(), key=lambda x: x[1], reverse=True)
+        return dict(sorted_sources[:10])
+    
+    def analyze_revenue_root_cause(self, transactions: List[TransactionData]) -> RevenueRootCauseAnalysis:
+        """Perform root cause analysis for revenue changes"""
+        comparison = self.calculate_month_over_month_comparison(transactions)
+        
+        # Get current and previous period data
+        df = self._transactions_to_dataframe(transactions)
+        current_period = pd.Period(comparison.current_month.period)
+        previous_period = pd.Period(comparison.previous_month.period)
+        
+        current_df = df[df['year_month'] == current_period]
+        previous_df = df[df['year_month'] == previous_period]
+        
+        # Filter for revenue transactions only
+        current_revenue = current_df[current_df['category'].str.lower().isin(self.revenue_categories)]
+        previous_revenue = previous_df[previous_df['category'].str.lower().isin(self.revenue_categories)]
+        
+        factors = []
+        
+        # Analyze by category
+        category_factors = self._analyze_by_category(current_revenue, previous_revenue, "category")
+        factors.extend(category_factors)
+        
+        # Analyze by description (top revenue sources)
+        desc_factors = self._analyze_by_description(current_revenue, previous_revenue, "description")
+        factors.extend(desc_factors)
+        
+        # Analyze by account
+        account_factors = self._analyze_by_category(current_revenue, previous_revenue, "account")
+        factors.extend(account_factors)
+        
+        # Rank factors by impact
+        ranked_factors = self._rank_factors_by_impact(factors, comparison.revenue_change)
+        
+        # Generate analysis summary and recommendations
+        summary = self._generate_analysis_summary(comparison, ranked_factors)
+        recommendations = self._generate_recommendations(ranked_factors, comparison)
+        
+        return RevenueRootCauseAnalysis(
+            metric="Revenue",
+            current_period_value=comparison.current_month.revenue,
+            previous_period_value=comparison.previous_month.revenue,
+            total_change=comparison.revenue_change,
+            change_percent=comparison.current_month.revenue_pct_change,
+            trend_direction="increasing" if comparison.revenue_change > 0 else "decreasing" if comparison.revenue_change < 0 else "stable",
+            top_contributing_factors=ranked_factors[:5],
+            analysis_summary=summary,
+            recommendations=recommendations
+        )
+    
+    def _analyze_by_category(self, current_df: pd.DataFrame, previous_df: pd.DataFrame, 
+                            column: str) -> List[RevenueFactor]:
+        """Analyze factors by a specific column (category, account, etc.)"""
+        factors = []
+        
+        current_totals = current_df.groupby(column)['amount'].sum()
+        previous_totals = previous_df.groupby(column)['amount'].sum()
+        
+        all_values = set(current_totals.index) | set(previous_totals.index)
+        
+        for value in all_values:
+            current_val = current_totals.get(value, 0.0)
+            previous_val = previous_totals.get(value, 0.0)
+            change = current_val - previous_val
+            
+            if abs(change) > 0.01:
+                change_percent = self._calculate_percentage_change(current_val, previous_val)
+                
+                factor = RevenueFactor(
+                    factor_name=value,
+                    factor_type=column.title(),
+                    current_value=current_val,
+                    previous_value=previous_val,
+                    change=change,
+                    change_percent=change_percent,
+                    impact_score=0.0,
+                    rank=0
+                )
+                factors.append(factor)
+        
+        return factors
+    
+    def _analyze_by_description(self, current_df: pd.DataFrame, previous_df: pd.DataFrame, 
+                               column: str) -> List[RevenueFactor]:
+        """Analyze factors by description (top contributors)"""
+        factors = []
+        
+        # Get top 10 descriptions by amount in current period
+        current_top = current_df.groupby(column)['amount'].sum().nlargest(10)
+        previous_totals = previous_df.groupby(column)['amount'].sum()
+        
+        for desc in current_top.index:
+            current_val = current_df[current_df[column] == desc]['amount'].sum()
+            previous_val = previous_totals.get(desc, 0.0)
+            change = current_val - previous_val
+            
+            if abs(change) > 0.01:
+                change_percent = self._calculate_percentage_change(current_val, previous_val)
+                
+                factor = RevenueFactor(
+                    factor_name=desc,
+                    factor_type=f"{column.title()} (Top Contributor)",
+                    current_value=current_val,
+                    previous_value=previous_val,
+                    change=change,
+                    change_percent=change_percent,
+                    impact_score=0.0,
+                    rank=0
+                )
+                factors.append(factor)
+        
+        return factors
+    
+    def _rank_factors_by_impact(self, factors: List[RevenueFactor], total_change: float) -> List[RevenueFactor]:
+        """Rank factors by their impact on the total change"""
+        if abs(total_change) < 0.01:
+            return factors
+        
+        for factor in factors:
+            factor.impact_score = abs(factor.change / total_change) * 100 if total_change != 0 else 0
+        
+        sorted_factors = sorted(factors, key=lambda x: x.impact_score, reverse=True)
+        
+        for i, factor in enumerate(sorted_factors):
+            factor.rank = i + 1
+        
+        return sorted_factors
+    
+    def _generate_analysis_summary(self, comparison: RevenueComparison, 
+                                 factors: List[RevenueFactor]) -> str:
+        """Generate analysis summary for revenue"""
+        direction = "increased" if comparison.revenue_change > 0 else "decreased" if comparison.revenue_change < 0 else "remained stable"
+        
+        if not factors:
+            return f"Revenue {direction} by {abs(comparison.revenue_change):,.2f} ({abs(comparison.current_month.revenue_pct_change):.1f}%) with no significant contributing factors identified."
+        
+        top_factor = factors[0]
+        summary = f"Revenue {direction} by {abs(comparison.revenue_change):,.2f} ({abs(comparison.current_month.revenue_pct_change):.1f}%). "
+        summary += f"Primary driver: {top_factor.factor_name} ({top_factor.factor_type}) with {top_factor.impact_score:.1f}% impact."
+        
+        if len(factors) > 1:
+            secondary_factor = factors[1]
+            summary += f" Secondary driver: {secondary_factor.factor_name} ({secondary_factor.impact_score:.1f}% impact)."
+        
+        return summary
+    
+    def _generate_recommendations(self, factors: List[RevenueFactor], comparison: RevenueComparison) -> List[str]:
+        """Generate recommendations for revenue optimization"""
+        recommendations = []
+        
+        if not factors:
+            recommendations.append("Monitor revenue streams closely for emerging trends.")
+            return recommendations
+        
+        # Basic recommendations based on factors
+        positive_factors = [f for f in factors if f.change > 0]
+        negative_factors = [f for f in factors if f.change < 0]
+        
+        if positive_factors:
+            top_positive = positive_factors[0]
+            recommendations.append(f"Scale successful revenue stream: {top_positive.factor_name}")
+            recommendations.append("Analyze and replicate success factors from growing revenue sources.")
+        
+        if negative_factors:
+            top_negative = negative_factors[0]
+            recommendations.append(f"Address declining revenue source: {top_negative.factor_name}")
+            recommendations.append("Investigate root causes of revenue decline and implement corrective measures.")
+        
+        # Recurring revenue recommendations
+        if comparison.current_month.recurring_revenue > 0:
+            recurring_pct = (comparison.current_month.recurring_revenue / comparison.current_month.revenue) * 100
+            if recurring_pct < 50:
+                recommendations.append("Focus on increasing recurring revenue to improve predictability.")
+            else:
+                recommendations.append("Maintain and expand existing recurring revenue streams.")
+        
+        # General revenue optimization recommendations
+        recommendations.append("Diversify revenue streams to reduce dependency risk.")
+        recommendations.append("Implement revenue forecasting and tracking systems.")
+        
+        return recommendations
+    
+    def get_revenue_summary(self, transactions: List[TransactionData]) -> Dict[str, Any]:
+        """Get comprehensive revenue summary with all metrics"""
+        comparison = self.calculate_month_over_month_comparison(transactions)
+        time_series = self.generate_time_series_data(transactions, months_back=6)
+        top_sources = self.identify_top_revenue_sources(transactions)
+        root_cause = self.analyze_revenue_root_cause(transactions)
+        
+        return {
+            "current_month": {
+                "period": comparison.current_month.period,
+                "revenue": {
+                    "value": comparison.current_month.revenue,
+                    "previous_value": comparison.previous_month.revenue,
+                    "change": comparison.revenue_change,
+                    "percentage_change": comparison.current_month.revenue_pct_change
+                },
+                "gross_revenue": {
+                    "value": comparison.current_month.gross_revenue,
+                    "previous_value": comparison.previous_month.gross_revenue,
+                    "change": comparison.gross_revenue_change
+                },
+                "recurring_revenue": {
+                    "value": comparison.current_month.recurring_revenue,
+                    "previous_value": comparison.previous_month.recurring_revenue,
+                    "change": comparison.recurring_revenue_change,
+                    "percentage_of_total": (comparison.current_month.recurring_revenue / comparison.current_month.revenue * 100) if comparison.current_month.revenue > 0 else 0
+                }
+            },
+            "time_series": {
+                "dates": time_series.dates,
+                "revenue": time_series.revenue,
+                "gross_revenue": time_series.gross_revenue,
+                "recurring_revenue": time_series.recurring_revenue,
+                "revenue_pct_changes": time_series.revenue_pct_changes
+            },
+            "top_revenue_sources": top_sources,
+            "root_cause_analysis": {
+                "analysis_summary": root_cause.analysis_summary,
+                "trend_direction": root_cause.trend_direction,
+                "top_factors": [
+                    {
+                        "factor_name": factor.factor_name,
+                        "factor_type": factor.factor_type,
+                        "change": factor.change,
+                        "change_percent": factor.change_percent,
+                        "impact_score": factor.impact_score,
+                        "rank": factor.rank
+                    }
+                    for factor in root_cause.top_contributing_factors
+                ],
+                "recommendations": root_cause.recommendations
+            }
+        }

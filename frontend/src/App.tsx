@@ -43,6 +43,21 @@ const App: React.FC = () => {
 
     try {
       const data = await uploadFile(file);
+      
+      // Check if the response contains an error
+      if (data.error) {
+        setError(data.error);
+        setDashboardData(null);
+        return;
+      }
+      
+      // Validate that we have the expected data structure
+      if (!data.tiles || !data.summary) {
+        setError('Invalid data structure received from server');
+        setDashboardData(null);
+        return;
+      }
+      
       setDashboardData(data);
       // Set the first available metric as selected
       const firstMetric = Object.keys(data.tiles)[0];
@@ -58,13 +73,13 @@ const App: React.FC = () => {
 
 
   const getMetricData = (metric: string) => {
-    if (!dashboardData) return null;
+    if (!dashboardData || !dashboardData.time_series) return null;
     
     const rawValues = dashboardData.time_series[metric as keyof typeof dashboardData.time_series];
     const values = Array.isArray(rawValues) ? rawValues.map(v => typeof v === 'string' ? parseFloat(v) : v) : [];
     
     return {
-      dates: dashboardData.time_series.dates,
+      dates: dashboardData.time_series.dates || [],
       values: values
     };
   };
@@ -73,7 +88,7 @@ const App: React.FC = () => {
     const colors = {
       revenue: '#10B981', // green
       expenses: '#EF4444', // red
-      profitability: '#8B5CF6', // purple
+      income: '#8B5CF6', // purple
       cash_flow: '#7C3AED', // darker purple
     };
     return colors[metric as keyof typeof colors] || '#8B5CF6';
@@ -83,7 +98,7 @@ const App: React.FC = () => {
     const icons = {
       revenue: '💰',
       expenses: '💸',
-      profitability: '📈',
+      income: '📈',
       cash_flow: '💳',
     };
     return icons[metric as keyof typeof icons] || '📊';
@@ -93,7 +108,7 @@ const App: React.FC = () => {
     const displayNames = {
       revenue: 'Revenue',
       expenses: 'Expenses',
-      profitability: 'Income',
+      income: 'Income',
       cash_flow: 'Cash Flow',
     };
     return displayNames[metric as keyof typeof displayNames] || metric.charAt(0).toUpperCase() + metric.slice(1).replace('_', ' ');
@@ -103,7 +118,7 @@ const App: React.FC = () => {
     const colors = {
       revenue: 'bg-green-500',
       expenses: 'bg-red-500',
-      profitability: 'bg-purple-500',
+      income: 'bg-purple-500',
       cash_flow: 'bg-purple-600',
     };
     return colors[metric as keyof typeof colors] || 'bg-purple-500';
@@ -212,26 +227,29 @@ const App: React.FC = () => {
             // Dashboard Section
             <div className="space-y-8">
               {/* Basic Info */}
-              <div className="bg-white rounded-lg shadow-sm border p-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                  <div className="flex items-center justify-center py-2">
-                    <span className="text-gray-600">Total Transactions:</span>
-                    <span className="ml-2 font-medium">{dashboardData.summary.total_transactions}</span>
-                  </div>
-                  <div className="flex items-center justify-center py-2">
-                    <span className="text-gray-600">Current Period:</span>
-                    <span className="ml-2 font-medium">{dashboardData.summary.current_period}</span>
-                  </div>
-                  <div className="flex items-center justify-center py-2">
-                    <span className="text-gray-600">Previous Period:</span>
-                    <span className="ml-2 font-medium">{dashboardData.summary.previous_period}</span>
+              {dashboardData.summary && (
+                <div className="bg-white rounded-lg shadow-sm border p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div className="flex items-center justify-center py-2">
+                      <span className="text-gray-600">Total Transactions:</span>
+                      <span className="ml-2 font-medium">{dashboardData.summary.total_transactions || 0}</span>
+                    </div>
+                    <div className="flex items-center justify-center py-2">
+                      <span className="text-gray-600">Current Period:</span>
+                      <span className="ml-2 font-medium">{dashboardData.summary.current_period || 'N/A'}</span>
+                    </div>
+                    <div className="flex items-center justify-center py-2">
+                      <span className="text-gray-600">Previous Period:</span>
+                      <span className="ml-2 font-medium">{dashboardData.summary.previous_period || 'N/A'}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Metric Tabs */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                {Object.entries(dashboardData.tiles).map(([metric, data]) => (
+              {dashboardData.tiles && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {Object.entries(dashboardData.tiles).map(([metric, data]) => (
                   <FinancialTile
                     key={metric}
                     title={getMetricDisplayName(metric)}
@@ -241,11 +259,12 @@ const App: React.FC = () => {
                     icon={getMetricIcon(metric)}
                     color={getMetricColorClass(metric)}
                   />
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
 
               {/* Summary Tile for Selected Metric */}
-              {selectedMetric && dashboardData.root_cause_analysis[selectedMetric as keyof typeof dashboardData.root_cause_analysis] && (
+              {selectedMetric && dashboardData.root_cause_analysis && dashboardData.root_cause_analysis[selectedMetric as keyof typeof dashboardData.root_cause_analysis] && (
                 <SummaryTile
                   selectedMetric={selectedMetric}
                   analysis={dashboardData.root_cause_analysis[selectedMetric as keyof typeof dashboardData.root_cause_analysis]}
@@ -256,7 +275,7 @@ const App: React.FC = () => {
               )}
 
               {/* Selected Metric Content */}
-              {selectedMetric && dashboardData.tiles[selectedMetric as keyof typeof dashboardData.tiles] && (
+              {selectedMetric && dashboardData.tiles && dashboardData.tiles[selectedMetric as keyof typeof dashboardData.tiles] && (
                 <div className="space-y-6">
                   {/* Time Series Chart */}
                   <TimeSeriesChart
@@ -267,15 +286,19 @@ const App: React.FC = () => {
                   />
 
                   {/* Root Cause Analysis */}
-                  <RootCauseAnalysisComponent
-                    analysis={dashboardData.root_cause_analysis[selectedMetric as keyof typeof dashboardData.root_cause_analysis]}
-                    metricName={getMetricDisplayName(selectedMetric)}
-                  />
+                  {dashboardData.root_cause_analysis && dashboardData.root_cause_analysis[selectedMetric as keyof typeof dashboardData.root_cause_analysis] && (
+                    <RootCauseAnalysisComponent
+                      analysis={dashboardData.root_cause_analysis[selectedMetric as keyof typeof dashboardData.root_cause_analysis]}
+                      metricName={getMetricDisplayName(selectedMetric)}
+                    />
+                  )}
                 </div>
               )}
 
               {/* Overall Insights and Priority Actions */}
-              <InsightsPanel insights={dashboardData.insights} />
+              {dashboardData.insights && (
+                <InsightsPanel insights={dashboardData.insights} />
+              )}
             </div>
           )}
         </main>

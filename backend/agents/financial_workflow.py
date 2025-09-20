@@ -12,12 +12,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from agents.data_ingest_agent import DataIngestAgent, ProcessedData, TransactionData
-from agents.financial_analysis_agent import (
-    FinancialAnalysisAgent, 
-    MonthlyComparison, 
-    TimeSeriesData,
-    ComprehensiveRootCauseAnalysis
-)
+from agents.cash_flow_agent import CashFlowAnalysisAgent, CashFlowComparison, CashFlowTimeSeriesData, CashFlowRootCauseAnalysis
+from agents.revenue_agent import RevenueAnalysisAgent, RevenueComparison, RevenueTimeSeriesData, RevenueRootCauseAnalysis
+from agents.expenses_agent import ExpensesAnalysisAgent, ExpensesComparison, ExpensesTimeSeriesData, ExpensesRootCauseAnalysis
+from agents.income_agent import IncomeAnalysisAgent, IncomeComparison, IncomeTimeSeriesData, IncomeRootCauseAnalysis
 from agents.data_storyteller_agent import DataStorytellerAgent
 
 # Create logger
@@ -29,9 +27,18 @@ class FinancialWorkflowState(TypedDict):
     file_path: str
     processed_data: ProcessedData
     transactions: List[TransactionData]
-    monthly_comparison: MonthlyComparison
-    time_series_data: TimeSeriesData
-    root_cause_analysis: ComprehensiveRootCauseAnalysis
+    cash_flow_comparison: CashFlowComparison
+    revenue_comparison: RevenueComparison
+    expenses_comparison: ExpensesComparison
+    income_comparison: IncomeComparison
+    cash_flow_time_series: CashFlowTimeSeriesData
+    revenue_time_series: RevenueTimeSeriesData
+    expenses_time_series: ExpensesTimeSeriesData
+    income_time_series: IncomeTimeSeriesData
+    cash_flow_root_cause: CashFlowRootCauseAnalysis
+    revenue_root_cause: RevenueRootCauseAnalysis
+    expenses_root_cause: ExpensesRootCauseAnalysis
+    income_root_cause: IncomeRootCauseAnalysis
     financial_narratives: Dict[str, Any]
     dashboard_data: Dict[str, Any]
     error_message: str
@@ -45,8 +52,11 @@ class FinancialWorkflow:
         logger.debug("Creating DataIngestAgent")
         self.data_ingest_agent = DataIngestAgent(openai_api_key)
         
-        logger.debug("Creating FinancialAnalysisAgent")
-        self.financial_analysis_agent = FinancialAnalysisAgent()
+        logger.debug("Creating specialized financial analysis agents")
+        self.cash_flow_agent = CashFlowAnalysisAgent()
+        self.revenue_agent = RevenueAnalysisAgent()
+        self.expenses_agent = ExpensesAnalysisAgent()
+        self.income_agent = IncomeAnalysisAgent()
         
         logger.debug("Creating DataStorytellerAgent")
         self.data_storyteller_agent = DataStorytellerAgent(openai_api_key)
@@ -62,7 +72,10 @@ class FinancialWorkflow:
         # Add nodes
         builder.add_node("data_ingest", self._data_ingest_node)
         builder.add_node("categorize_transactions", self._categorize_transactions_node)
-        builder.add_node("calculate_metrics", self._calculate_metrics_node)
+        builder.add_node("calculate_cash_flow_metrics", self._calculate_cash_flow_metrics_node)
+        builder.add_node("calculate_revenue_metrics", self._calculate_revenue_metrics_node)
+        builder.add_node("calculate_expenses_metrics", self._calculate_expenses_metrics_node)
+        builder.add_node("calculate_income_metrics", self._calculate_income_metrics_node)
         builder.add_node("generate_time_series", self._generate_time_series_node)
         builder.add_node("root_cause_analysis", self._root_cause_analysis_node)
         builder.add_node("generate_narratives", self._generate_narratives_node)
@@ -75,11 +88,15 @@ class FinancialWorkflow:
             "data_ingest",
             self._check_data_ingest_success,
             {
-                "success": "calculate_metrics",
+                "success": "calculate_cash_flow_metrics",
                 "error": "error_handler"
             }
         )
-        builder.add_edge("calculate_metrics", "generate_time_series")
+        # Parallel execution of metric calculations
+        builder.add_edge("calculate_cash_flow_metrics", "calculate_revenue_metrics")
+        builder.add_edge("calculate_revenue_metrics", "calculate_expenses_metrics")
+        builder.add_edge("calculate_expenses_metrics", "calculate_income_metrics")
+        builder.add_edge("calculate_income_metrics", "generate_time_series")
         builder.add_edge("generate_time_series", "root_cause_analysis")
         builder.add_edge("root_cause_analysis", "generate_narratives")
         builder.add_edge("generate_narratives", "prepare_dashboard_data")
@@ -127,33 +144,96 @@ class FinancialWorkflow:
                 "error_message": f"Transaction categorization failed: {str(e)}"
             }
     
-    def _calculate_metrics_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
-        """Calculate monthly financial metrics and comparison"""
+    def _calculate_cash_flow_metrics_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
+        """Calculate cash flow metrics using specialized agent"""
         try:
-            monthly_comparison = self.financial_analysis_agent.calculate_month_over_month_comparison(
+            cash_flow_comparison = self.cash_flow_agent.calculate_month_over_month_comparison(
                 state["transactions"]
             )
             
             return {
                 **state,
-                "monthly_comparison": monthly_comparison
+                "cash_flow_comparison": cash_flow_comparison
             }
         except Exception as e:
             return {
                 **state,
-                "error_message": f"Metrics calculation failed: {str(e)}"
+                "error_message": f"Cash flow metrics calculation failed: {str(e)}"
             }
     
-    def _generate_time_series_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
-        """Generate time series data for charts"""
+    def _calculate_revenue_metrics_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
+        """Calculate revenue metrics using specialized agent"""
         try:
-            time_series_data = self.financial_analysis_agent.generate_time_series_data(
+            revenue_comparison = self.revenue_agent.calculate_month_over_month_comparison(
                 state["transactions"]
             )
             
             return {
                 **state,
-                "time_series_data": time_series_data
+                "revenue_comparison": revenue_comparison
+            }
+        except Exception as e:
+            return {
+                **state,
+                "error_message": f"Revenue metrics calculation failed: {str(e)}"
+            }
+    
+    def _calculate_expenses_metrics_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
+        """Calculate expenses metrics using specialized agent"""
+        try:
+            expenses_comparison = self.expenses_agent.calculate_month_over_month_comparison(
+                state["transactions"]
+            )
+            
+            return {
+                **state,
+                "expenses_comparison": expenses_comparison
+            }
+        except Exception as e:
+            return {
+                **state,
+                "error_message": f"Expenses metrics calculation failed: {str(e)}"
+            }
+    
+    def _calculate_income_metrics_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
+        """Calculate income metrics using specialized agent"""
+        try:
+            income_comparison = self.income_agent.calculate_month_over_month_comparison(
+                state["transactions"]
+            )
+            
+            return {
+                **state,
+                "income_comparison": income_comparison
+            }
+        except Exception as e:
+            return {
+                **state,
+                "error_message": f"Income metrics calculation failed: {str(e)}"
+            }
+    
+    def _generate_time_series_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
+        """Generate time series data for charts using specialized agents"""
+        try:
+            cash_flow_time_series = self.cash_flow_agent.generate_time_series_data(
+                state["transactions"]
+            )
+            revenue_time_series = self.revenue_agent.generate_time_series_data(
+                state["transactions"]
+            )
+            expenses_time_series = self.expenses_agent.generate_time_series_data(
+                state["transactions"]
+            )
+            income_time_series = self.income_agent.generate_time_series_data(
+                state["transactions"]
+            )
+            
+            return {
+                **state,
+                "cash_flow_time_series": cash_flow_time_series,
+                "revenue_time_series": revenue_time_series,
+                "expenses_time_series": expenses_time_series,
+                "income_time_series": income_time_series
             }
         except Exception as e:
             return {
@@ -162,15 +242,27 @@ class FinancialWorkflow:
             }
     
     def _root_cause_analysis_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
-        """Perform comprehensive root cause analysis for all metrics"""
+        """Perform root cause analysis using specialized agents"""
         try:
-            root_cause_analysis = self.financial_analysis_agent.perform_comprehensive_root_cause_analysis(
+            cash_flow_root_cause = self.cash_flow_agent.analyze_cash_flow_root_cause(
+                state["transactions"]
+            )
+            revenue_root_cause = self.revenue_agent.analyze_revenue_root_cause(
+                state["transactions"]
+            )
+            expenses_root_cause = self.expenses_agent.analyze_expenses_root_cause(
+                state["transactions"]
+            )
+            income_root_cause = self.income_agent.analyze_income_root_cause(
                 state["transactions"]
             )
             
             return {
                 **state,
-                "root_cause_analysis": root_cause_analysis
+                "cash_flow_root_cause": cash_flow_root_cause,
+                "revenue_root_cause": revenue_root_cause,
+                "expenses_root_cause": expenses_root_cause,
+                "income_root_cause": income_root_cause
             }
         except Exception as e:
             return {
@@ -182,18 +274,29 @@ class FinancialWorkflow:
         """Generate financial narratives using the DataStorytellerAgent"""
         logger.info("Starting narrative generation with DataStorytellerAgent")
         try:
-            root_cause_analysis = state["root_cause_analysis"]
-            logger.debug("Root cause analysis available for narrative generation")
+            revenue_root_cause = state["revenue_root_cause"]
+            expenses_root_cause = state["expenses_root_cause"]
+            income_root_cause = state["income_root_cause"]
+            cash_flow_root_cause = state["cash_flow_root_cause"]
+            logger.debug("Root cause analyses available for narrative generation")
+            
+            # Generate overall insights and priority actions
+            overall_insights = self._generate_overall_insights(
+                revenue_root_cause, expenses_root_cause, income_root_cause, cash_flow_root_cause
+            )
+            priority_actions = self._generate_priority_actions(
+                revenue_root_cause, expenses_root_cause, income_root_cause, cash_flow_root_cause
+            )
             
             # Generate comprehensive narratives using the DataStorytellerAgent
             logger.debug("Calling DataStorytellerAgent.generate_comprehensive_narrative")
             financial_narratives = self.data_storyteller_agent.generate_comprehensive_narrative(
-                root_cause_analysis.revenue_analysis,
-                root_cause_analysis.expenses_analysis,
-                root_cause_analysis.profitability_analysis,
-                root_cause_analysis.cash_flow_analysis,
-                root_cause_analysis.overall_insights,
-                root_cause_analysis.priority_actions
+                revenue_root_cause,
+                expenses_root_cause,
+                income_root_cause,
+                cash_flow_root_cause,
+                overall_insights,
+                priority_actions
             )
             
             logger.info("Narrative generation completed successfully")
@@ -212,50 +315,62 @@ class FinancialWorkflow:
     def _prepare_dashboard_data_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
         """Prepare final dashboard data structure"""
         try:
-            comparison = state["monthly_comparison"]
-            time_series = state["time_series_data"]
-            root_cause = state["root_cause_analysis"]
+            cash_flow_comparison = state["cash_flow_comparison"]
+            revenue_comparison = state["revenue_comparison"]
+            expenses_comparison = state["expenses_comparison"]
+            income_comparison = state["income_comparison"]
+            
+            cash_flow_time_series = state["cash_flow_time_series"]
+            revenue_time_series = state["revenue_time_series"]
+            expenses_time_series = state["expenses_time_series"]
+            income_time_series = state["income_time_series"]
+            
+            cash_flow_root_cause = state["cash_flow_root_cause"]
+            revenue_root_cause = state["revenue_root_cause"]
+            expenses_root_cause = state["expenses_root_cause"]
+            income_root_cause = state["income_root_cause"]
+            
             narratives = state["financial_narratives"]
             
             dashboard_data = {
                 "tiles": {
                     "revenue": {
-                        "current": comparison.current_month.revenue,
-                        "previous": comparison.previous_month.revenue,
-                        "change": comparison.revenue_change,
-                        "change_percent": comparison.current_month.revenue_pct_change
+                        "current": revenue_comparison.current_month.revenue,
+                        "previous": revenue_comparison.previous_month.revenue,
+                        "change": revenue_comparison.revenue_change,
+                        "change_percent": revenue_comparison.current_month.revenue_pct_change
                     },
                     "expenses": {
-                        "current": comparison.current_month.expenses,
-                        "previous": comparison.previous_month.expenses,
-                        "change": comparison.expenses_change,
-                        "change_percent": comparison.current_month.expenses_pct_change
+                        "current": expenses_comparison.current_month.expenses,
+                        "previous": expenses_comparison.previous_month.expenses,
+                        "change": expenses_comparison.expenses_change,
+                        "change_percent": expenses_comparison.current_month.expenses_pct_change
                     },
-                    "profitability": {
-                        "current": comparison.current_month.profitability,
-                        "previous": comparison.previous_month.profitability,
-                        "change": comparison.profitability_change,
-                        "change_percent": comparison.current_month.profitability_pct_change
+                    "income": {
+                        "current": income_comparison.current_month.net_income,
+                        "previous": income_comparison.previous_month.net_income,
+                        "change": income_comparison.income_change,
+                        "change_percent": income_comparison.current_month.income_pct_change
                     },
                     "cash_flow": {
-                        "current": comparison.current_month.cash_flow,
-                        "previous": comparison.previous_month.cash_flow,
-                        "change": comparison.cash_flow_change,
-                        "change_percent": comparison.current_month.cash_flow_pct_change
+                        "current": cash_flow_comparison.current_month.cash_flow,
+                        "previous": cash_flow_comparison.previous_month.cash_flow,
+                        "change": cash_flow_comparison.cash_flow_change,
+                        "change_percent": cash_flow_comparison.current_month.cash_flow_pct_change
                     }
                 },
                 "time_series": {
-                    "dates": time_series.dates,
-                    "revenue": time_series.revenue,
-                    "expenses": time_series.expenses,
-                    "profitability": time_series.profitability,
-                    "cash_flow": time_series.cash_flow
+                    "dates": revenue_time_series.dates,
+                    "revenue": revenue_time_series.revenue,
+                    "expenses": expenses_time_series.expenses,
+                    "income": income_time_series.net_income,
+                    "cash_flow": cash_flow_time_series.cash_flow
                 },
                 "root_cause_analysis": {
                     "revenue": {
-                        "metric": root_cause.revenue_analysis.metric,
-                        "trend_direction": root_cause.revenue_analysis.trend_direction,
-                        "analysis_summary": root_cause.revenue_analysis.analysis_summary,
+                        "metric": revenue_root_cause.metric,
+                        "trend_direction": revenue_root_cause.trend_direction,
+                        "analysis_summary": revenue_root_cause.analysis_summary,
                         "top_factors": [
                             {
                                 "factor_name": factor.factor_name,
@@ -265,14 +380,14 @@ class FinancialWorkflow:
                                 "impact_score": factor.impact_score,
                                 "rank": factor.rank
                             }
-                            for factor in root_cause.revenue_analysis.top_contributing_factors
+                            for factor in revenue_root_cause.top_contributing_factors
                         ],
-                        "recommendations": root_cause.revenue_analysis.recommendations
+                        "recommendations": revenue_root_cause.recommendations
                     },
                     "expenses": {
-                        "metric": root_cause.expenses_analysis.metric,
-                        "trend_direction": root_cause.expenses_analysis.trend_direction,
-                        "analysis_summary": root_cause.expenses_analysis.analysis_summary,
+                        "metric": expenses_root_cause.metric,
+                        "trend_direction": expenses_root_cause.trend_direction,
+                        "analysis_summary": expenses_root_cause.analysis_summary,
                         "top_factors": [
                             {
                                 "factor_name": factor.factor_name,
@@ -282,14 +397,14 @@ class FinancialWorkflow:
                                 "impact_score": factor.impact_score,
                                 "rank": factor.rank
                             }
-                            for factor in root_cause.expenses_analysis.top_contributing_factors
+                            for factor in expenses_root_cause.top_contributing_factors
                         ],
-                        "recommendations": root_cause.expenses_analysis.recommendations
+                        "recommendations": expenses_root_cause.recommendations
                     },
-                    "profitability": {
-                        "metric": root_cause.profitability_analysis.metric,
-                        "trend_direction": root_cause.profitability_analysis.trend_direction,
-                        "analysis_summary": root_cause.profitability_analysis.analysis_summary,
+                    "income": {
+                        "metric": income_root_cause.metric,
+                        "trend_direction": income_root_cause.trend_direction,
+                        "analysis_summary": income_root_cause.analysis_summary,
                         "top_factors": [
                             {
                                 "factor_name": factor.factor_name,
@@ -299,14 +414,14 @@ class FinancialWorkflow:
                                 "impact_score": factor.impact_score,
                                 "rank": factor.rank
                             }
-                            for factor in root_cause.profitability_analysis.top_contributing_factors
+                            for factor in income_root_cause.top_contributing_factors
                         ],
-                        "recommendations": root_cause.profitability_analysis.recommendations
+                        "recommendations": income_root_cause.recommendations
                     },
                     "cash_flow": {
-                        "metric": root_cause.cash_flow_analysis.metric,
-                        "trend_direction": root_cause.cash_flow_analysis.trend_direction,
-                        "analysis_summary": root_cause.cash_flow_analysis.analysis_summary,
+                        "metric": cash_flow_root_cause.metric,
+                        "trend_direction": cash_flow_root_cause.trend_direction,
+                        "analysis_summary": cash_flow_root_cause.analysis_summary,
                         "top_factors": [
                             {
                                 "factor_name": factor.factor_name,
@@ -316,9 +431,9 @@ class FinancialWorkflow:
                                 "impact_score": factor.impact_score,
                                 "rank": factor.rank
                             }
-                            for factor in root_cause.cash_flow_analysis.top_contributing_factors
+                            for factor in cash_flow_root_cause.top_contributing_factors
                         ],
-                        "recommendations": root_cause.cash_flow_analysis.recommendations
+                        "recommendations": cash_flow_root_cause.recommendations
                     }
                 },
                 "insights": {
@@ -339,11 +454,11 @@ class FinancialWorkflow:
                         "actionable_recommendations": narratives["expenses"].actionable_recommendations,
                         "business_impact": narratives["expenses"].business_impact
                     },
-                    "profitability": {
-                        "narrative": narratives["profitability"].narrative,
-                        "key_insights": narratives["profitability"].key_insights,
-                        "actionable_recommendations": narratives["profitability"].actionable_recommendations,
-                        "business_impact": narratives["profitability"].business_impact
+                    "income": {
+                        "narrative": narratives["income"].narrative,
+                        "key_insights": narratives["income"].key_insights,
+                        "actionable_recommendations": narratives["income"].actionable_recommendations,
+                        "business_impact": narratives["income"].business_impact
                     },
                     "cash_flow": {
                         "narrative": narratives["cash_flow"].narrative,
@@ -354,8 +469,8 @@ class FinancialWorkflow:
                 },
                 "summary": {
                     "total_transactions": len(state["transactions"]),
-                    "current_period": comparison.current_month.period,
-                    "previous_period": comparison.previous_month.period
+                    "current_period": revenue_comparison.current_month.period,
+                    "previous_period": revenue_comparison.previous_month.period
                 }
             }
             
@@ -397,9 +512,18 @@ class FinancialWorkflow:
             "file_path": file_path,
             "processed_data": None,
             "transactions": [],
-            "monthly_comparison": None,
-            "time_series_data": None,
-            "root_cause_analysis": None,
+            "cash_flow_comparison": None,
+            "revenue_comparison": None,
+            "expenses_comparison": None,
+            "income_comparison": None,
+            "cash_flow_time_series": None,
+            "revenue_time_series": None,
+            "expenses_time_series": None,
+            "income_time_series": None,
+            "cash_flow_root_cause": None,
+            "revenue_root_cause": None,
+            "expenses_root_cause": None,
+            "income_root_cause": None,
             "financial_narratives": None,
             "dashboard_data": {},
             "error_message": ""
@@ -415,3 +539,73 @@ class FinancialWorkflow:
             logger.info("Workflow completed successfully")
             
         return result["dashboard_data"]
+    
+    def _generate_overall_insights(self, revenue_analysis, expenses_analysis, income_analysis, cash_flow_analysis) -> List[str]:
+        """Generate overall business insights from all analyses"""
+        insights = []
+        
+        # Trend analysis
+        trends = [
+            ("Revenue", revenue_analysis.trend_direction, revenue_analysis.change_percent),
+            ("Expenses", expenses_analysis.trend_direction, expenses_analysis.change_percent),
+            ("Income", income_analysis.trend_direction, income_analysis.change_percent),
+            ("Cash Flow", cash_flow_analysis.trend_direction, cash_flow_analysis.change_percent)
+        ]
+        
+        # Identify patterns
+        increasing_metrics = [m for m, t, p in trends if t == "increasing"]
+        decreasing_metrics = [m for m, t, p in trends if t == "decreasing"]
+        
+        if len(increasing_metrics) >= 3:
+            insights.append(f"Strong positive momentum across multiple metrics: {', '.join(increasing_metrics)}")
+        
+        if len(decreasing_metrics) >= 3:
+            insights.append(f"Multiple metrics showing decline: {', '.join(decreasing_metrics)} - requires immediate attention")
+        
+        # Cross-metric insights
+        if revenue_analysis.trend_direction == "increasing" and expenses_analysis.trend_direction == "increasing":
+            if income_analysis.trend_direction == "increasing":
+                insights.append("Revenue growth is outpacing expense growth, leading to improved profitability")
+            else:
+                insights.append("Expense growth is outpacing revenue growth, impacting profitability")
+        
+        if cash_flow_analysis.trend_direction != income_analysis.trend_direction:
+            insights.append("Cash flow and profitability trends are diverging - review working capital management")
+        
+        return insights
+    
+    def _generate_priority_actions(self, revenue_analysis, expenses_analysis, income_analysis, cash_flow_analysis) -> List[str]:
+        """Generate priority actions based on all analyses"""
+        actions = []
+        
+        # High impact actions based on largest changes
+        all_changes = [
+            ("Revenue", abs(revenue_analysis.change_percent)),
+            ("Expenses", abs(expenses_analysis.change_percent)),
+            ("Income", abs(income_analysis.change_percent)),
+            ("Cash Flow", abs(cash_flow_analysis.change_percent))
+        ]
+        
+        # Sort by magnitude of change
+        sorted_changes = sorted(all_changes, key=lambda x: x[1], reverse=True)
+        
+        # Focus on metrics with significant changes (>10%)
+        significant_changes = [m for m, p in sorted_changes if p > 10]
+        
+        if "Income" in significant_changes:
+            actions.append("Priority: Address profitability challenges immediately")
+        
+        if "Cash Flow" in significant_changes:
+            actions.append("Priority: Implement cash flow management measures")
+        
+        if "Expenses" in significant_changes and expenses_analysis.trend_direction == "increasing":
+            actions.append("Priority: Control expense growth")
+        
+        if "Revenue" in significant_changes and revenue_analysis.trend_direction == "decreasing":
+            actions.append("Priority: Focus on revenue generation")
+        
+        # Add general actions
+        actions.append("Implement regular financial monitoring and reporting")
+        actions.append("Develop contingency plans for adverse scenarios")
+        
+        return actions

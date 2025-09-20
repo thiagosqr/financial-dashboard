@@ -177,7 +177,7 @@ async def get_metrics():
         "available_metrics": [
             "revenue",
             "expenses", 
-            "profitability",
+            "income",
             "cash_flow"
         ],
         "time_periods": [

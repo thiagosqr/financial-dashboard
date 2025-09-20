@@ -6,7 +6,14 @@ from typing import Dict, List, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field
-from agents.financial_analysis_agent import RootCauseAnalysis
+from typing import Union
+from agents.cash_flow_agent import CashFlowRootCauseAnalysis
+from agents.revenue_agent import RevenueRootCauseAnalysis  
+from agents.expenses_agent import ExpensesRootCauseAnalysis
+from agents.income_agent import IncomeRootCauseAnalysis
+
+# Union type for all root cause analysis types
+RootCauseAnalysis = Union[CashFlowRootCauseAnalysis, RevenueRootCauseAnalysis, ExpensesRootCauseAnalysis, IncomeRootCauseAnalysis]
 
 # Create logger
 logger = logging.getLogger(__name__)
@@ -97,10 +104,10 @@ Make it accessible to business stakeholders while maintaining financial accuracy
             return self._generate_fallback_narrative(root_cause_analysis)
     
     def generate_comprehensive_narrative(self, 
-                                       revenue_analysis: RootCauseAnalysis,
-                                       expenses_analysis: RootCauseAnalysis, 
-                                       profitability_analysis: RootCauseAnalysis,
-                                       cash_flow_analysis: RootCauseAnalysis,
+                                       revenue_analysis: RevenueRootCauseAnalysis,
+                                       expenses_analysis: ExpensesRootCauseAnalysis, 
+                                       income_analysis: IncomeRootCauseAnalysis,
+                                       cash_flow_analysis: CashFlowRootCauseAnalysis,
                                        overall_insights: List[str],
                                        priority_actions: List[str]) -> Dict[str, Any]:
         """Generate comprehensive narratives for all metrics and overall business story"""
@@ -115,8 +122,8 @@ Make it accessible to business stakeholders while maintaining financial accuracy
         logger.debug("Generating expenses narrative")
         expenses_narrative = self.generate_metric_narrative(expenses_analysis)
         
-        logger.debug("Generating profitability narrative")
-        profitability_narrative = self.generate_metric_narrative(profitability_analysis)
+        logger.debug("Generating income narrative")
+        income_narrative = self.generate_metric_narrative(income_analysis)
         
         logger.debug("Generating cash flow narrative")
         cash_flow_narrative = self.generate_metric_narrative(cash_flow_analysis)
@@ -124,7 +131,7 @@ Make it accessible to business stakeholders while maintaining financial accuracy
         # Generate overall business narrative
         logger.debug("Generating overall business narrative")
         overall_narrative = self._generate_overall_business_narrative(
-            revenue_analysis, expenses_analysis, profitability_analysis, cash_flow_analysis,
+            revenue_analysis, expenses_analysis, income_analysis, cash_flow_analysis,
             overall_insights, priority_actions
         )
         
@@ -132,7 +139,7 @@ Make it accessible to business stakeholders while maintaining financial accuracy
         return {
             "revenue": revenue_narrative,
             "expenses": expenses_narrative,
-            "profitability": profitability_narrative,
+            "income": income_narrative,
             "cash_flow": cash_flow_narrative,
             "overall_business_story": overall_narrative,
             "priority_actions": priority_actions,
@@ -152,10 +159,10 @@ Make it accessible to business stakeholders while maintaining financial accuracy
         return factors_text
     
     def _generate_overall_business_narrative(self, 
-                                           revenue_analysis: RootCauseAnalysis,
-                                           expenses_analysis: RootCauseAnalysis,
-                                           profitability_analysis: RootCauseAnalysis,
-                                           cash_flow_analysis: RootCauseAnalysis,
+                                           revenue_analysis: RevenueRootCauseAnalysis,
+                                           expenses_analysis: ExpensesRootCauseAnalysis,
+                                           income_analysis: IncomeRootCauseAnalysis,
+                                           cash_flow_analysis: CashFlowRootCauseAnalysis,
                                            overall_insights: List[str],
                                            priority_actions: List[str]) -> Dict[str, Any]:
         """Generate an overall business narrative that ties everything together"""
@@ -185,8 +192,8 @@ Based on the comprehensive financial analysis below, create an overall business 
 - Trend: {expenses_analysis.trend_direction}
 
 **Profitability Performance:**
-- Change: ${profitability_analysis.total_change:,.2f} ({profitability_analysis.change_percent:.1f}%)
-- Trend: {profitability_analysis.trend_direction}
+- Change: ${income_analysis.total_change:,.2f} ({income_analysis.change_percent:.1f}%)
+- Trend: {income_analysis.trend_direction}
 
 **Cash Flow Performance:**
 - Change: ${cash_flow_analysis.total_change:,.2f} ({cash_flow_analysis.change_percent:.1f}%)
@@ -210,7 +217,7 @@ Please provide a comprehensive business narrative that synthesizes this informat
             }
         except Exception as e:
             return self._generate_fallback_overall_narrative(
-                revenue_analysis, expenses_analysis, profitability_analysis, cash_flow_analysis,
+                revenue_analysis, expenses_analysis, income_analysis, cash_flow_analysis,
                 overall_insights, priority_actions
             )
     
@@ -257,15 +264,15 @@ Please provide a comprehensive business narrative that synthesizes this informat
         )
     
     def _generate_fallback_overall_narrative(self, 
-                                           revenue_analysis: RootCauseAnalysis,
-                                           expenses_analysis: RootCauseAnalysis,
-                                           profitability_analysis: RootCauseAnalysis,
-                                           cash_flow_analysis: RootCauseAnalysis,
+                                           revenue_analysis: RevenueRootCauseAnalysis,
+                                           expenses_analysis: ExpensesRootCauseAnalysis,
+                                           income_analysis: IncomeRootCauseAnalysis,
+                                           cash_flow_analysis: CashFlowRootCauseAnalysis,
                                            overall_insights: List[str],
                                            priority_actions: List[str]) -> Dict[str, Any]:
         """Generate a basic overall narrative if OpenAI fails"""
         return {
-            "narrative": f"Business performance shows mixed results across key metrics. Revenue {revenue_analysis.trend_direction}, expenses {expenses_analysis.trend_direction}, profitability {profitability_analysis.trend_direction}, and cash flow {cash_flow_analysis.trend_direction}. Key priorities include monitoring these trends and taking appropriate action.",
+            "narrative": f"Business performance shows mixed results across key metrics. Revenue {revenue_analysis.trend_direction}, expenses {expenses_analysis.trend_direction}, income {income_analysis.trend_direction}, and cash flow {cash_flow_analysis.trend_direction}. Key priorities include monitoring these trends and taking appropriate action.",
             "executive_summary": "Financial performance shows varying trends across key metrics requiring strategic attention.",
             "key_themes": ["Financial Performance", "Strategic Planning"]
         }

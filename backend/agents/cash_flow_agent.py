@@ -1,0 +1,449 @@
+"""
+Cash Flow Analysis Agent for calculating and analyzing cash flow metrics
+"""
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Any, TypedDict
+from datetime import datetime, timedelta
+from pydantic import BaseModel, Field
+from agents.data_ingest_agent import TransactionData
+
+
+class CashFlowMetrics(BaseModel):
+    """Schema for cash flow metrics"""
+    cash_flow: float = Field(description="Net cash flow for the period")
+    period: str = Field(description="Period being analyzed (e.g., '2024-01')")
+    cash_flow_pct_change: float = Field(description="Cash flow percentage change from previous period")
+    cash_inflows: float = Field(description="Total cash inflows for the period")
+    cash_outflows: float = Field(description="Total cash outflows for the period")
+    operating_cash_flow: float = Field(description="Operating cash flow for the period")
+    net_cash_position: float = Field(description="Net cash position")
+
+
+class CashFlowComparison(BaseModel):
+    """Schema for cash flow month-over-month comparison"""
+    current_month: CashFlowMetrics = Field(description="Current month cash flow metrics")
+    previous_month: CashFlowMetrics = Field(description="Previous month cash flow metrics")
+    cash_flow_change: float = Field(description="Cash flow change from previous month")
+    inflows_change: float = Field(description="Cash inflows change from previous month")
+    outflows_change: float = Field(description="Cash outflows change from previous month")
+
+
+class CashFlowTimeSeriesData(BaseModel):
+    """Schema for cash flow time series data"""
+    dates: List[str] = Field(description="List of dates in YYYY-MM format")
+    cash_flow: List[float] = Field(description="Cash flow values for each month")
+    cash_inflows: List[float] = Field(description="Cash inflow values for each month")
+    cash_outflows: List[float] = Field(description="Cash outflow values for each month")
+    cash_flow_pct_changes: List[float] = Field(description="Cash flow percentage changes month-over-month")
+
+
+class CashFlowFactor(BaseModel):
+    """Schema for individual cash flow contributing factors"""
+    factor_name: str = Field(description="Name of the contributing factor")
+    factor_type: str = Field(description="Type of factor (Inflow/Outflow - category, account, etc.)")
+    current_value: float = Field(description="Current period value")
+    previous_value: float = Field(description="Previous period value")
+    change: float = Field(description="Absolute change")
+    change_percent: float = Field(description="Percentage change")
+    impact_score: float = Field(description="Impact score (0-100) based on contribution to total change")
+    rank: int = Field(description="Ranking by impact (1 = highest impact)")
+
+
+class CashFlowRootCauseAnalysis(BaseModel):
+    """Schema for cash flow root cause analysis results"""
+    metric: str = Field(description="Cash Flow")
+    current_period_value: float = Field(description="Current period cash flow value")
+    previous_period_value: float = Field(description="Previous period cash flow value")
+    total_change: float = Field(description="Total change in cash flow")
+    change_percent: float = Field(description="Percentage change")
+    trend_direction: str = Field(description="Trend direction (increasing, decreasing, stable)")
+    top_contributing_factors: List[CashFlowFactor] = Field(description="Top contributing factors ranked by impact")
+    analysis_summary: str = Field(description="Summary of the cash flow analysis")
+    recommendations: List[str] = Field(description="Actionable recommendations based on analysis")
+
+
+class CashFlowAnalysisAgent:
+    """Agent responsible for cash flow analysis using pandas calculations"""
+    
+    def __init__(self):
+        self.revenue_categories = ['revenue/sales', 'interest income', 'other income', 'gst collected']
+    
+    def _transactions_to_dataframe(self, transactions: List[TransactionData]) -> pd.DataFrame:
+        """Convert transactions to pandas DataFrame for analysis"""
+        data = []
+        for t in transactions:
+            data.append({
+                'date': t.date,
+                'description': t.description,
+                'amount': t.amount,
+                'category': t.category,
+                'account': t.account
+            })
+        
+        df = pd.DataFrame(data)
+        df['date'] = pd.to_datetime(df['date'])
+        df['year_month'] = df['date'].dt.to_period('M')
+        return df
+    
+    def calculate_monthly_cash_flow_metrics(self, transactions: List[TransactionData], 
+                                          target_month: str = None, 
+                                          previous_month: str = None) -> CashFlowMetrics:
+        """Calculate cash flow metrics for a specific month using pandas"""
+        if target_month is None:
+            target_month = datetime.now().strftime('%Y-%m')
+        
+        df = self._transactions_to_dataframe(transactions)
+        
+        # Filter for target month
+        target_period = pd.Period(target_month)
+        month_df = df[df['year_month'] == target_period]
+        
+        if month_df.empty:
+            return CashFlowMetrics(
+                cash_flow=0.0,
+                period=target_month,
+                cash_flow_pct_change=0.0,
+                cash_inflows=0.0,
+                cash_outflows=0.0,
+                operating_cash_flow=0.0,
+                net_cash_position=0.0
+            )
+        
+        # Calculate cash flow metrics
+        revenue_mask = month_df['category'].str.lower().isin(self.revenue_categories)
+        cash_inflows = month_df[revenue_mask]['amount'].sum()
+        cash_outflows = abs(month_df[~revenue_mask]['amount'].sum())
+        cash_flow = month_df['amount'].sum()
+        operating_cash_flow = cash_flow  # Simplified - could be enhanced with more detailed categorization
+        net_cash_position = cash_flow  # Simplified - would need running balance in real implementation
+        
+        # Calculate percentage changes if previous month data is available
+        cash_flow_pct_change = 0.0
+        
+        if previous_month:
+            prev_period = pd.Period(previous_month)
+            prev_month_df = df[df['year_month'] == prev_period]
+            
+            if not prev_month_df.empty:
+                prev_cash_flow = prev_month_df['amount'].sum()
+                cash_flow_pct_change = self._calculate_percentage_change(cash_flow, prev_cash_flow)
+        
+        return CashFlowMetrics(
+            cash_flow=cash_flow,
+            period=target_month,
+            cash_flow_pct_change=cash_flow_pct_change,
+            cash_inflows=cash_inflows,
+            cash_outflows=cash_outflows,
+            operating_cash_flow=operating_cash_flow,
+            net_cash_position=net_cash_position
+        )
+    
+    def _calculate_percentage_change(self, current: float, previous: float) -> float:
+        """Calculate percentage change between current and previous values"""
+        if previous == 0:
+            return 0.0 if current == 0 else 100.0
+        return ((current - previous) / abs(previous)) * 100
+    
+    def calculate_month_over_month_comparison(self, transactions: List[TransactionData]) -> CashFlowComparison:
+        """Calculate month-over-month cash flow comparison using pandas"""
+        if not transactions:
+            empty_metrics = CashFlowMetrics(
+                cash_flow=0.0,
+                period="unknown",
+                cash_flow_pct_change=0.0,
+                cash_inflows=0.0,
+                cash_outflows=0.0,
+                operating_cash_flow=0.0,
+                net_cash_position=0.0
+            )
+            return CashFlowComparison(
+                current_month=empty_metrics,
+                previous_month=empty_metrics,
+                cash_flow_change=0.0,
+                inflows_change=0.0,
+                outflows_change=0.0
+            )
+        
+        df = self._transactions_to_dataframe(transactions)
+        available_months = sorted(df['year_month'].unique())
+        
+        if len(available_months) < 2:
+            current_month = available_months[0].strftime('%Y-%m') if available_months else datetime.now().strftime('%Y-%m')
+            current_metrics = self.calculate_monthly_cash_flow_metrics(transactions, current_month)
+            previous_metrics = CashFlowMetrics(
+                cash_flow=0.0,
+                period="unknown",
+                cash_flow_pct_change=0.0,
+                cash_inflows=0.0,
+                cash_outflows=0.0,
+                operating_cash_flow=0.0,
+                net_cash_position=0.0
+            )
+        else:
+            current_period = available_months[-1]
+            previous_period = available_months[-2]
+            
+            current_month = current_period.strftime('%Y-%m')
+            previous_month = previous_period.strftime('%Y-%m')
+            
+            current_metrics = self.calculate_monthly_cash_flow_metrics(transactions, current_month, previous_month)
+            previous_metrics = self.calculate_monthly_cash_flow_metrics(transactions, previous_month)
+        
+        # Calculate changes
+        cash_flow_change = current_metrics.cash_flow - previous_metrics.cash_flow
+        inflows_change = current_metrics.cash_inflows - previous_metrics.cash_inflows
+        outflows_change = current_metrics.cash_outflows - previous_metrics.cash_outflows
+        
+        return CashFlowComparison(
+            current_month=current_metrics,
+            previous_month=previous_metrics,
+            cash_flow_change=cash_flow_change,
+            inflows_change=inflows_change,
+            outflows_change=outflows_change
+        )
+    
+    def generate_time_series_data(self, transactions: List[TransactionData], 
+                                months_back: int = 12) -> CashFlowTimeSeriesData:
+        """Generate cash flow time series data for the last N months using pandas"""
+        if not transactions:
+            return CashFlowTimeSeriesData(
+                dates=[],
+                cash_flow=[],
+                cash_inflows=[],
+                cash_outflows=[],
+                cash_flow_pct_changes=[]
+            )
+        
+        df = self._transactions_to_dataframe(transactions)
+        available_months = sorted(df['year_month'].unique())
+        if len(available_months) > months_back:
+            available_months = available_months[-months_back:]
+        
+        dates = []
+        cash_flow_data = []
+        cash_inflows_data = []
+        cash_outflows_data = []
+        cash_flow_pct_changes = []
+        
+        for i, period in enumerate(available_months):
+            month_str = period.strftime('%Y-%m')
+            dates.append(month_str)
+            
+            prev_month = None
+            if i > 0:
+                prev_month = available_months[i-1].strftime('%Y-%m')
+            
+            metrics = self.calculate_monthly_cash_flow_metrics(transactions, month_str, prev_month)
+            cash_flow_data.append(metrics.cash_flow)
+            cash_inflows_data.append(metrics.cash_inflows)
+            cash_outflows_data.append(metrics.cash_outflows)
+            cash_flow_pct_changes.append(metrics.cash_flow_pct_change)
+        
+        return CashFlowTimeSeriesData(
+            dates=dates,
+            cash_flow=cash_flow_data,
+            cash_inflows=cash_inflows_data,
+            cash_outflows=cash_outflows_data,
+            cash_flow_pct_changes=cash_flow_pct_changes
+        )
+    
+    def analyze_cash_flow_root_cause(self, transactions: List[TransactionData]) -> CashFlowRootCauseAnalysis:
+        """Perform root cause analysis for cash flow changes"""
+        comparison = self.calculate_month_over_month_comparison(transactions)
+        
+        # Get current and previous period data
+        df = self._transactions_to_dataframe(transactions)
+        current_period = pd.Period(comparison.current_month.period)
+        previous_period = pd.Period(comparison.previous_month.period)
+        
+        current_df = df[df['year_month'] == current_period]
+        previous_df = df[df['year_month'] == previous_period]
+        
+        factors = []
+        
+        # Cash flow includes all transactions, so analyze both revenue and expenses
+        current_revenue = current_df[current_df['category'].str.lower().isin(self.revenue_categories)]
+        previous_revenue = previous_df[previous_df['category'].str.lower().isin(self.revenue_categories)]
+        current_expenses = current_df[~current_df['category'].str.lower().isin(self.revenue_categories)]
+        previous_expenses = previous_df[~previous_df['category'].str.lower().isin(self.revenue_categories)]
+        
+        # Revenue impact factors (positive impact on cash flow)
+        revenue_factors = self._analyze_by_category(current_revenue, previous_revenue, "category")
+        for factor in revenue_factors:
+            factor.factor_type = f"Inflow - {factor.factor_type}"
+        factors.extend(revenue_factors)
+        
+        # Expense impact factors (negative impact on cash flow)
+        expense_factors = self._analyze_by_category(current_expenses, previous_expenses, "category")
+        for factor in expense_factors:
+            factor.factor_type = f"Outflow - {factor.factor_type}"
+        factors.extend(expense_factors)
+        
+        # Analyze by account
+        account_factors = self._analyze_by_category(current_df, previous_df, "account")
+        factors.extend(account_factors)
+        
+        # Rank factors by impact
+        ranked_factors = self._rank_factors_by_impact(factors, comparison.cash_flow_change)
+        
+        # Generate analysis summary and recommendations
+        summary = self._generate_analysis_summary(comparison, ranked_factors)
+        recommendations = self._generate_recommendations(ranked_factors)
+        
+        return CashFlowRootCauseAnalysis(
+            metric="Cash Flow",
+            current_period_value=comparison.current_month.cash_flow,
+            previous_period_value=comparison.previous_month.cash_flow,
+            total_change=comparison.cash_flow_change,
+            change_percent=comparison.current_month.cash_flow_pct_change,
+            trend_direction="increasing" if comparison.cash_flow_change > 0 else "decreasing" if comparison.cash_flow_change < 0 else "stable",
+            top_contributing_factors=ranked_factors[:5],
+            analysis_summary=summary,
+            recommendations=recommendations
+        )
+    
+    def _analyze_by_category(self, current_df: pd.DataFrame, previous_df: pd.DataFrame, 
+                            column: str) -> List[CashFlowFactor]:
+        """Analyze factors by a specific column (category, account, etc.)"""
+        factors = []
+        
+        current_totals = current_df.groupby(column)['amount'].sum()
+        previous_totals = previous_df.groupby(column)['amount'].sum()
+        
+        all_values = set(current_totals.index) | set(previous_totals.index)
+        
+        for value in all_values:
+            current_val = current_totals.get(value, 0.0)
+            previous_val = previous_totals.get(value, 0.0)
+            change = current_val - previous_val
+            
+            if abs(change) > 0.01:
+                change_percent = self._calculate_percentage_change(current_val, previous_val)
+                
+                factor = CashFlowFactor(
+                    factor_name=value,
+                    factor_type=column.title(),
+                    current_value=current_val,
+                    previous_value=previous_val,
+                    change=change,
+                    change_percent=change_percent,
+                    impact_score=0.0,
+                    rank=0
+                )
+                factors.append(factor)
+        
+        return factors
+    
+    def _rank_factors_by_impact(self, factors: List[CashFlowFactor], total_change: float) -> List[CashFlowFactor]:
+        """Rank factors by their impact on the total change"""
+        if abs(total_change) < 0.01:
+            return factors
+        
+        for factor in factors:
+            factor.impact_score = abs(factor.change / total_change) * 100 if total_change != 0 else 0
+        
+        sorted_factors = sorted(factors, key=lambda x: x.impact_score, reverse=True)
+        
+        for i, factor in enumerate(sorted_factors):
+            factor.rank = i + 1
+        
+        return sorted_factors
+    
+    def _generate_analysis_summary(self, comparison: CashFlowComparison, 
+                                 factors: List[CashFlowFactor]) -> str:
+        """Generate analysis summary for cash flow"""
+        direction = "improved" if comparison.cash_flow_change > 0 else "declined" if comparison.cash_flow_change < 0 else "remained stable"
+        
+        if not factors:
+            return f"Cash flow {direction} by {abs(comparison.cash_flow_change):,.2f} ({abs(comparison.current_month.cash_flow_pct_change):.1f}%) with no significant contributing factors identified."
+        
+        top_factor = factors[0]
+        summary = f"Cash flow {direction} by {abs(comparison.cash_flow_change):,.2f} ({abs(comparison.current_month.cash_flow_pct_change):.1f}%). "
+        summary += f"Primary driver: {top_factor.factor_name} ({top_factor.factor_type}) with {top_factor.impact_score:.1f}% impact."
+        
+        if len(factors) > 1:
+            secondary_factor = factors[1]
+            summary += f" Secondary driver: {secondary_factor.factor_name} ({secondary_factor.impact_score:.1f}% impact)."
+        
+        return summary
+    
+    def _generate_recommendations(self, factors: List[CashFlowFactor]) -> List[str]:
+        """Generate recommendations for cash flow management"""
+        recommendations = []
+        
+        if not factors:
+            return ["Implement cash flow monitoring systems."]
+        
+        inflow_factors = [f for f in factors if f.factor_type.startswith("Inflow")]
+        outflow_factors = [f for f in factors if f.factor_type.startswith("Outflow")]
+        
+        if inflow_factors:
+            recommendations.append("Optimize cash inflow processes and timing.")
+        
+        if outflow_factors:
+            recommendations.append("Review cash outflow management and payment schedules.")
+        
+        # Specific recommendations based on trends
+        increasing_outflows = [f for f in outflow_factors if f.change > 0]
+        if increasing_outflows:
+            recommendations.append("Monitor and control increasing cash outflows.")
+        
+        decreasing_inflows = [f for f in inflow_factors if f.change < 0]
+        if decreasing_inflows:
+            recommendations.append("Address declining cash inflows through revenue strategies.")
+        
+        recommendations.append("Maintain adequate cash reserves for operational flexibility.")
+        
+        return recommendations
+    
+    def get_cash_flow_summary(self, transactions: List[TransactionData]) -> Dict[str, Any]:
+        """Get comprehensive cash flow summary with all metrics"""
+        comparison = self.calculate_month_over_month_comparison(transactions)
+        time_series = self.generate_time_series_data(transactions, months_back=6)
+        root_cause = self.analyze_cash_flow_root_cause(transactions)
+        
+        return {
+            "current_month": {
+                "period": comparison.current_month.period,
+                "cash_flow": {
+                    "value": comparison.current_month.cash_flow,
+                    "previous_value": comparison.previous_month.cash_flow,
+                    "change": comparison.cash_flow_change,
+                    "percentage_change": comparison.current_month.cash_flow_pct_change
+                },
+                "cash_inflows": {
+                    "value": comparison.current_month.cash_inflows,
+                    "previous_value": comparison.previous_month.cash_inflows,
+                    "change": comparison.inflows_change
+                },
+                "cash_outflows": {
+                    "value": comparison.current_month.cash_outflows,
+                    "previous_value": comparison.previous_month.cash_outflows,
+                    "change": comparison.outflows_change
+                }
+            },
+            "time_series": {
+                "dates": time_series.dates,
+                "cash_flow": time_series.cash_flow,
+                "cash_inflows": time_series.cash_inflows,
+                "cash_outflows": time_series.cash_outflows,
+                "cash_flow_pct_changes": time_series.cash_flow_pct_changes
+            },
+            "root_cause_analysis": {
+                "analysis_summary": root_cause.analysis_summary,
+                "trend_direction": root_cause.trend_direction,
+                "top_factors": [
+                    {
+                        "factor_name": factor.factor_name,
+                        "factor_type": factor.factor_type,
+                        "change": factor.change,
+                        "change_percent": factor.change_percent,
+                        "impact_score": factor.impact_score,
+                        "rank": factor.rank
+                    }
+                    for factor in root_cause.top_contributing_factors
+                ],
+                "recommendations": root_cause.recommendations
+            }
+        }

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { DashboardData, ApiResponse } from '../types';
+import { DashboardData } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 

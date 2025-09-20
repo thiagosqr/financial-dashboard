@@ -1,0 +1,534 @@
+"""
+Expenses Analysis Agent for calculating and analyzing expense metrics
+"""
+import pandas as pd
+import numpy as np
+from typing import Dict, List, Any, TypedDict
+from datetime import datetime, timedelta
+from pydantic import BaseModel, Field
+from agents.data_ingest_agent import TransactionData
+
+
+class ExpensesMetrics(BaseModel):
+    """Schema for expenses metrics"""
+    expenses: float = Field(description="Total expenses for the period")
+    period: str = Field(description="Period being analyzed (e.g., '2024-01')")
+    expenses_pct_change: float = Field(description="Expenses percentage change from previous period")
+    operating_expenses: float = Field(description="Operating expenses for the period")
+    fixed_expenses: float = Field(description="Fixed expenses for the period")
+    variable_expenses: float = Field(description="Variable expenses for the period")
+
+
+class ExpensesComparison(BaseModel):
+    """Schema for expenses month-over-month comparison"""
+    current_month: ExpensesMetrics = Field(description="Current month expenses metrics")
+    previous_month: ExpensesMetrics = Field(description="Previous month expenses metrics")
+    expenses_change: float = Field(description="Expenses change from previous month")
+    operating_expenses_change: float = Field(description="Operating expenses change from previous month")
+    fixed_expenses_change: float = Field(description="Fixed expenses change from previous month")
+
+
+class ExpensesTimeSeriesData(BaseModel):
+    """Schema for expenses time series data"""
+    dates: List[str] = Field(description="List of dates in YYYY-MM format")
+    expenses: List[float] = Field(description="Expense values for each month")
+    operating_expenses: List[float] = Field(description="Operating expense values for each month")
+    fixed_expenses: List[float] = Field(description="Fixed expense values for each month")
+    expenses_pct_changes: List[float] = Field(description="Expenses percentage changes month-over-month")
+
+
+class ExpensesFactor(BaseModel):
+    """Schema for individual expenses contributing factors"""
+    factor_name: str = Field(description="Name of the contributing factor")
+    factor_type: str = Field(description="Type of factor (category, description, account, etc.)")
+    current_value: float = Field(description="Current period value")
+    previous_value: float = Field(description="Previous period value")
+    change: float = Field(description="Absolute change")
+    change_percent: float = Field(description="Percentage change")
+    impact_score: float = Field(description="Impact score (0-100) based on contribution to total change")
+    rank: int = Field(description="Ranking by impact (1 = highest impact)")
+
+
+class ExpensesRootCauseAnalysis(BaseModel):
+    """Schema for expenses root cause analysis results"""
+    metric: str = Field(description="Expenses")
+    current_period_value: float = Field(description="Current period expenses value")
+    previous_period_value: float = Field(description="Previous period expenses value")
+    total_change: float = Field(description="Total change in expenses")
+    change_percent: float = Field(description="Percentage change")
+    trend_direction: str = Field(description="Trend direction (increasing, decreasing, stable)")
+    top_contributing_factors: List[ExpensesFactor] = Field(description="Top contributing factors ranked by impact")
+    analysis_summary: str = Field(description="Summary of the expenses analysis")
+    recommendations: List[str] = Field(description="Actionable recommendations based on analysis")
+
+
+class ExpensesAnalysisAgent:
+    """Agent responsible for expenses analysis using pandas calculations"""
+    
+    def __init__(self):
+        self.revenue_categories = ['revenue/sales', 'interest income', 'other income', 'gst collected']
+        self.fixed_expense_indicators = ['rent', 'salary', 'insurance', 'subscription', 'license', 'loan', 'mortgage']
+        self.operating_expense_categories = ['office supplies', 'utilities', 'marketing', 'travel', 'professional services']
+    
+    def _transactions_to_dataframe(self, transactions: List[TransactionData]) -> pd.DataFrame:
+        """Convert transactions to pandas DataFrame for analysis"""
+        data = []
+        for t in transactions:
+            data.append({
+                'date': t.date,
+                'description': t.description,
+                'amount': t.amount,
+                'category': t.category,
+                'account': t.account
+            })
+        
+        df = pd.DataFrame(data)
+        df['date'] = pd.to_datetime(df['date'])
+        df['year_month'] = df['date'].dt.to_period('M')
+        return df
+    
+    def _is_fixed_expense(self, description: str, category: str) -> bool:
+        """Determine if an expense is fixed based on description and category"""
+        description_lower = description.lower()
+        category_lower = category.lower()
+        return any(indicator in description_lower or indicator in category_lower 
+                  for indicator in self.fixed_expense_indicators)
+    
+    def _is_operating_expense(self, category: str) -> bool:
+        """Determine if an expense is operating expense based on category"""
+        category_lower = category.lower()
+        return any(op_cat in category_lower for op_cat in self.operating_expense_categories)
+    
+    def calculate_monthly_expenses_metrics(self, transactions: List[TransactionData], 
+                                         target_month: str = None, 
+                                         previous_month: str = None) -> ExpensesMetrics:
+        """Calculate expenses metrics for a specific month using pandas"""
+        if target_month is None:
+            target_month = datetime.now().strftime('%Y-%m')
+        
+        df = self._transactions_to_dataframe(transactions)
+        
+        # Filter for target month and expense transactions
+        target_period = pd.Period(target_month)
+        month_df = df[df['year_month'] == target_period]
+        expense_df = month_df[~month_df['category'].str.lower().isin(self.revenue_categories)]
+        
+        if expense_df.empty:
+            return ExpensesMetrics(
+                expenses=0.0,
+                period=target_month,
+                expenses_pct_change=0.0,
+                operating_expenses=0.0,
+                fixed_expenses=0.0,
+                variable_expenses=0.0
+            )
+        
+        # Calculate expense metrics
+        expenses = expense_df['amount'].sum()
+        
+        # Categorize expenses
+        fixed_expenses = expense_df[expense_df.apply(
+            lambda row: self._is_fixed_expense(row['description'], row['category']), axis=1
+        )]['amount'].sum()
+        
+        operating_expenses = expense_df[expense_df['category'].apply(self._is_operating_expense)]['amount'].sum()
+        variable_expenses = expenses - fixed_expenses
+        
+        # Calculate percentage changes if previous month data is available
+        expenses_pct_change = 0.0
+        
+        if previous_month:
+            prev_period = pd.Period(previous_month)
+            prev_month_df = df[df['year_month'] == prev_period]
+            prev_expense_df = prev_month_df[~prev_month_df['category'].str.lower().isin(self.revenue_categories)]
+            
+            if not prev_expense_df.empty:
+                prev_expenses = prev_expense_df['amount'].sum()
+                expenses_pct_change = self._calculate_percentage_change(expenses, prev_expenses)
+        
+        return ExpensesMetrics(
+            expenses=expenses,
+            period=target_month,
+            expenses_pct_change=expenses_pct_change,
+            operating_expenses=operating_expenses,
+            fixed_expenses=fixed_expenses,
+            variable_expenses=variable_expenses
+        )
+    
+    def _calculate_percentage_change(self, current: float, previous: float) -> float:
+        """Calculate percentage change between current and previous values"""
+        if previous == 0:
+            return 0.0 if current == 0 else 100.0
+        return ((current - previous) / abs(previous)) * 100
+    
+    def calculate_month_over_month_comparison(self, transactions: List[TransactionData]) -> ExpensesComparison:
+        """Calculate month-over-month expenses comparison using pandas"""
+        if not transactions:
+            empty_metrics = ExpensesMetrics(
+                expenses=0.0,
+                period="unknown",
+                expenses_pct_change=0.0,
+                operating_expenses=0.0,
+                fixed_expenses=0.0,
+                variable_expenses=0.0
+            )
+            return ExpensesComparison(
+                current_month=empty_metrics,
+                previous_month=empty_metrics,
+                expenses_change=0.0,
+                operating_expenses_change=0.0,
+                fixed_expenses_change=0.0
+            )
+        
+        df = self._transactions_to_dataframe(transactions)
+        available_months = sorted(df['year_month'].unique())
+        
+        if len(available_months) < 2:
+            current_month = available_months[0].strftime('%Y-%m') if available_months else datetime.now().strftime('%Y-%m')
+            current_metrics = self.calculate_monthly_expenses_metrics(transactions, current_month)
+            previous_metrics = ExpensesMetrics(
+                expenses=0.0,
+                period="unknown",
+                expenses_pct_change=0.0,
+                operating_expenses=0.0,
+                fixed_expenses=0.0,
+                variable_expenses=0.0
+            )
+        else:
+            current_period = available_months[-1]
+            previous_period = available_months[-2]
+            
+            current_month = current_period.strftime('%Y-%m')
+            previous_month = previous_period.strftime('%Y-%m')
+            
+            current_metrics = self.calculate_monthly_expenses_metrics(transactions, current_month, previous_month)
+            previous_metrics = self.calculate_monthly_expenses_metrics(transactions, previous_month)
+        
+        # Calculate changes
+        expenses_change = current_metrics.expenses - previous_metrics.expenses
+        operating_expenses_change = current_metrics.operating_expenses - previous_metrics.operating_expenses
+        fixed_expenses_change = current_metrics.fixed_expenses - previous_metrics.fixed_expenses
+        
+        return ExpensesComparison(
+            current_month=current_metrics,
+            previous_month=previous_metrics,
+            expenses_change=expenses_change,
+            operating_expenses_change=operating_expenses_change,
+            fixed_expenses_change=fixed_expenses_change
+        )
+    
+    def generate_time_series_data(self, transactions: List[TransactionData], 
+                                months_back: int = 12) -> ExpensesTimeSeriesData:
+        """Generate expenses time series data for the last N months using pandas"""
+        if not transactions:
+            return ExpensesTimeSeriesData(
+                dates=[],
+                expenses=[],
+                operating_expenses=[],
+                fixed_expenses=[],
+                expenses_pct_changes=[]
+            )
+        
+        df = self._transactions_to_dataframe(transactions)
+        available_months = sorted(df['year_month'].unique())
+        if len(available_months) > months_back:
+            available_months = available_months[-months_back:]
+        
+        dates = []
+        expenses_data = []
+        operating_expenses_data = []
+        fixed_expenses_data = []
+        expenses_pct_changes = []
+        
+        for i, period in enumerate(available_months):
+            month_str = period.strftime('%Y-%m')
+            dates.append(month_str)
+            
+            prev_month = None
+            if i > 0:
+                prev_month = available_months[i-1].strftime('%Y-%m')
+            
+            metrics = self.calculate_monthly_expenses_metrics(transactions, month_str, prev_month)
+            expenses_data.append(metrics.expenses)
+            operating_expenses_data.append(metrics.operating_expenses)
+            fixed_expenses_data.append(metrics.fixed_expenses)
+            expenses_pct_changes.append(metrics.expenses_pct_change)
+        
+        return ExpensesTimeSeriesData(
+            dates=dates,
+            expenses=expenses_data,
+            operating_expenses=operating_expenses_data,
+            fixed_expenses=fixed_expenses_data,
+            expenses_pct_changes=expenses_pct_changes
+        )
+    
+    def categorize_expenses(self, transactions: List[TransactionData]) -> Dict[str, float]:
+        """Categorize expenses by category using pandas"""
+        df = self._transactions_to_dataframe(transactions)
+        
+        # Filter for expenses (non-revenue categories)
+        expense_mask = ~df['category'].str.lower().isin(self.revenue_categories)
+        expense_df = df[expense_mask]
+        
+        if expense_df.empty:
+            return {}
+        
+        # Group by category and sum amounts
+        category_totals = expense_df.groupby('category')['amount'].sum().abs().to_dict()
+        
+        return category_totals
+    
+    def identify_top_expense_categories(self, transactions: List[TransactionData]) -> Dict[str, float]:
+        """Identify top expense categories using pandas"""
+        category_totals = self.categorize_expenses(transactions)
+        
+        # Sort by amount and return top 10
+        sorted_categories = sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
+        return dict(sorted_categories[:10])
+    
+    def analyze_expenses_root_cause(self, transactions: List[TransactionData]) -> ExpensesRootCauseAnalysis:
+        """Perform root cause analysis for expenses changes"""
+        comparison = self.calculate_month_over_month_comparison(transactions)
+        
+        # Get current and previous period data
+        df = self._transactions_to_dataframe(transactions)
+        current_period = pd.Period(comparison.current_month.period)
+        previous_period = pd.Period(comparison.previous_month.period)
+        
+        current_df = df[df['year_month'] == current_period]
+        previous_df = df[df['year_month'] == previous_period]
+        
+        # Filter for expense transactions only
+        current_expenses = current_df[~current_df['category'].str.lower().isin(self.revenue_categories)]
+        previous_expenses = previous_df[~previous_df['category'].str.lower().isin(self.revenue_categories)]
+        
+        factors = []
+        
+        # Analyze by category
+        category_factors = self._analyze_by_category(current_expenses, previous_expenses, "category")
+        factors.extend(category_factors)
+        
+        # Analyze by description (top expense sources)
+        desc_factors = self._analyze_by_description(current_expenses, previous_expenses, "description")
+        factors.extend(desc_factors)
+        
+        # Analyze by account
+        account_factors = self._analyze_by_category(current_expenses, previous_expenses, "account")
+        factors.extend(account_factors)
+        
+        # Rank factors by impact
+        ranked_factors = self._rank_factors_by_impact(factors, comparison.expenses_change)
+        
+        # Generate analysis summary and recommendations
+        summary = self._generate_analysis_summary(comparison, ranked_factors)
+        recommendations = self._generate_recommendations(ranked_factors, comparison)
+        
+        return ExpensesRootCauseAnalysis(
+            metric="Expenses",
+            current_period_value=comparison.current_month.expenses,
+            previous_period_value=comparison.previous_month.expenses,
+            total_change=comparison.expenses_change,
+            change_percent=comparison.current_month.expenses_pct_change,
+            trend_direction="increasing" if comparison.expenses_change > 0 else "decreasing" if comparison.expenses_change < 0 else "stable",
+            top_contributing_factors=ranked_factors[:5],
+            analysis_summary=summary,
+            recommendations=recommendations
+        )
+    
+    def _analyze_by_category(self, current_df: pd.DataFrame, previous_df: pd.DataFrame, 
+                            column: str) -> List[ExpensesFactor]:
+        """Analyze factors by a specific column (category, account, etc.)"""
+        factors = []
+        
+        current_totals = current_df.groupby(column)['amount'].sum()
+        previous_totals = previous_df.groupby(column)['amount'].sum()
+        
+        all_values = set(current_totals.index) | set(previous_totals.index)
+        
+        for value in all_values:
+            current_val = current_totals.get(value, 0.0)
+            previous_val = previous_totals.get(value, 0.0)
+            change = current_val - previous_val
+            
+            if abs(change) > 0.01:
+                change_percent = self._calculate_percentage_change(current_val, previous_val)
+                
+                factor = ExpensesFactor(
+                    factor_name=value,
+                    factor_type=column.title(),
+                    current_value=current_val,
+                    previous_value=previous_val,
+                    change=change,
+                    change_percent=change_percent,
+                    impact_score=0.0,
+                    rank=0
+                )
+                factors.append(factor)
+        
+        return factors
+    
+    def _analyze_by_description(self, current_df: pd.DataFrame, previous_df: pd.DataFrame, 
+                               column: str) -> List[ExpensesFactor]:
+        """Analyze factors by description (top contributors)"""
+        factors = []
+        
+        # Get top 10 descriptions by amount in current period
+        current_top = current_df.groupby(column)['amount'].sum().abs().nlargest(10)
+        previous_totals = previous_df.groupby(column)['amount'].sum()
+        
+        for desc in current_top.index:
+            current_val = current_df[current_df[column] == desc]['amount'].sum()
+            previous_val = previous_totals.get(desc, 0.0)
+            change = current_val - previous_val
+            
+            if abs(change) > 0.01:
+                change_percent = self._calculate_percentage_change(current_val, previous_val)
+                
+                factor = ExpensesFactor(
+                    factor_name=desc,
+                    factor_type=f"{column.title()} (Top Contributor)",
+                    current_value=current_val,
+                    previous_value=previous_val,
+                    change=change,
+                    change_percent=change_percent,
+                    impact_score=0.0,
+                    rank=0
+                )
+                factors.append(factor)
+        
+        return factors
+    
+    def _rank_factors_by_impact(self, factors: List[ExpensesFactor], total_change: float) -> List[ExpensesFactor]:
+        """Rank factors by their impact on the total change"""
+        if abs(total_change) < 0.01:
+            return factors
+        
+        for factor in factors:
+            factor.impact_score = abs(factor.change / total_change) * 100 if total_change != 0 else 0
+        
+        sorted_factors = sorted(factors, key=lambda x: x.impact_score, reverse=True)
+        
+        for i, factor in enumerate(sorted_factors):
+            factor.rank = i + 1
+        
+        return sorted_factors
+    
+    def _generate_analysis_summary(self, comparison: ExpensesComparison, 
+                                 factors: List[ExpensesFactor]) -> str:
+        """Generate analysis summary for expenses"""
+        direction = "increased" if comparison.expenses_change > 0 else "decreased" if comparison.expenses_change < 0 else "remained stable"
+        
+        if not factors:
+            return f"Expenses {direction} by {abs(comparison.expenses_change):,.2f} ({abs(comparison.current_month.expenses_pct_change):.1f}%) with no significant contributing factors identified."
+        
+        top_factor = factors[0]
+        summary = f"Expenses {direction} by {abs(comparison.expenses_change):,.2f} ({abs(comparison.current_month.expenses_pct_change):.1f}%). "
+        summary += f"Primary driver: {top_factor.factor_name} ({top_factor.factor_type}) with {top_factor.impact_score:.1f}% impact."
+        
+        if len(factors) > 1:
+            secondary_factor = factors[1]
+            summary += f" Secondary driver: {secondary_factor.factor_name} ({secondary_factor.impact_score:.1f}% impact)."
+        
+        return summary
+    
+    def _generate_recommendations(self, factors: List[ExpensesFactor], comparison: ExpensesComparison) -> List[str]:
+        """Generate recommendations for expense management"""
+        recommendations = []
+        
+        if not factors:
+            recommendations.append("Review expense categories for optimization opportunities.")
+            return recommendations
+        
+        # Basic recommendations based on factors
+        increasing_factors = [f for f in factors if f.change > 0]
+        decreasing_factors = [f for f in factors if f.change < 0]
+        
+        if increasing_factors:
+            top_increasing = increasing_factors[0]
+            recommendations.append(f"Review and control increasing expense: {top_increasing.factor_name}")
+            recommendations.append("Analyze cost drivers and implement cost control measures.")
+        
+        if decreasing_factors:
+            recommendations.append("Maintain successful cost reduction strategies.")
+        
+        # Fixed vs variable expense recommendations
+        fixed_expense_ratio = (comparison.current_month.fixed_expenses / comparison.current_month.expenses) * 100 if comparison.current_month.expenses > 0 else 0
+        
+        if fixed_expense_ratio > 70:
+            recommendations.append("High fixed expenses detected - consider optimizing fixed cost structure.")
+        elif fixed_expense_ratio < 30:
+            recommendations.append("Low fixed expenses provide operational flexibility - monitor variable costs closely.")
+        
+        # Operating expense recommendations
+        if comparison.current_month.operating_expenses > 0:
+            operating_ratio = (comparison.current_month.operating_expenses / comparison.current_month.expenses) * 100
+            if operating_ratio > 60:
+                recommendations.append("Focus on operational efficiency improvements.")
+        
+        # General expense management recommendations
+        recommendations.append("Implement expense tracking and approval workflows.")
+        recommendations.append("Regularly review and negotiate vendor contracts.")
+        recommendations.append("Consider automation to reduce operational costs.")
+        
+        return recommendations
+    
+    def get_expenses_summary(self, transactions: List[TransactionData]) -> Dict[str, Any]:
+        """Get comprehensive expenses summary with all metrics"""
+        comparison = self.calculate_month_over_month_comparison(transactions)
+        time_series = self.generate_time_series_data(transactions, months_back=6)
+        top_categories = self.identify_top_expense_categories(transactions)
+        root_cause = self.analyze_expenses_root_cause(transactions)
+        
+        return {
+            "current_month": {
+                "period": comparison.current_month.period,
+                "expenses": {
+                    "value": comparison.current_month.expenses,
+                    "previous_value": comparison.previous_month.expenses,
+                    "change": comparison.expenses_change,
+                    "percentage_change": comparison.current_month.expenses_pct_change
+                },
+                "operating_expenses": {
+                    "value": comparison.current_month.operating_expenses,
+                    "previous_value": comparison.previous_month.operating_expenses,
+                    "change": comparison.operating_expenses_change,
+                    "percentage_of_total": (comparison.current_month.operating_expenses / comparison.current_month.expenses * 100) if comparison.current_month.expenses > 0 else 0
+                },
+                "fixed_expenses": {
+                    "value": comparison.current_month.fixed_expenses,
+                    "previous_value": comparison.previous_month.fixed_expenses,
+                    "change": comparison.fixed_expenses_change,
+                    "percentage_of_total": (comparison.current_month.fixed_expenses / comparison.current_month.expenses * 100) if comparison.current_month.expenses > 0 else 0
+                },
+                "variable_expenses": {
+                    "value": comparison.current_month.variable_expenses,
+                    "previous_value": comparison.previous_month.variable_expenses,
+                    "change": comparison.current_month.variable_expenses - comparison.previous_month.variable_expenses,
+                    "percentage_of_total": (comparison.current_month.variable_expenses / comparison.current_month.expenses * 100) if comparison.current_month.expenses > 0 else 0
+                }
+            },
+            "time_series": {
+                "dates": time_series.dates,
+                "expenses": time_series.expenses,
+                "operating_expenses": time_series.operating_expenses,
+                "fixed_expenses": time_series.fixed_expenses,
+                "expenses_pct_changes": time_series.expenses_pct_changes
+            },
+            "top_expense_categories": top_categories,
+            "root_cause_analysis": {
+                "analysis_summary": root_cause.analysis_summary,
+                "trend_direction": root_cause.trend_direction,
+                "top_factors": [
+                    {
+                        "factor_name": factor.factor_name,
+                        "factor_type": factor.factor_type,
+                        "change": factor.change,
+                        "change_percent": factor.change_percent,
+                        "impact_score": factor.impact_score,
+                        "rank": factor.rank
+                    }
+                    for factor in root_cause.top_contributing_factors
+                ],
+                "recommendations": root_cause.recommendations
+            }
+        }
