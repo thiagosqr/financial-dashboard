@@ -17,6 +17,7 @@ from agents.revenue_agent import RevenueAnalysisAgent, RevenueComparison, Revenu
 from agents.expenses_agent import ExpensesAnalysisAgent, ExpensesComparison, ExpensesTimeSeriesData, ExpensesRootCauseAnalysis
 from agents.income_agent import IncomeAnalysisAgent, IncomeComparison, IncomeTimeSeriesData, IncomeRootCauseAnalysis
 from agents.data_storyteller_agent import DataStorytellerAgent
+from agents.advisor_agent import FinancialAdvisorAgent
 
 # Create logger
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class FinancialWorkflowState(TypedDict):
     expenses_root_cause: ExpensesRootCauseAnalysis
     income_root_cause: IncomeRootCauseAnalysis
     financial_narratives: Dict[str, Any]
+    advisor_recommendations: Dict[str, Any]
     dashboard_data: Dict[str, Any]
     error_message: str
 
@@ -61,6 +63,9 @@ class FinancialWorkflow:
         logger.debug("Creating DataStorytellerAgent")
         self.data_storyteller_agent = DataStorytellerAgent(openai_api_key)
         
+        logger.debug("Creating FinancialAdvisorAgent")
+        self.advisor_agent = FinancialAdvisorAgent(openai_api_key)
+        
         logger.debug("Building workflow graph")
         self.workflow = self._build_workflow()
         logger.info("FinancialWorkflow initialized successfully")
@@ -79,6 +84,7 @@ class FinancialWorkflow:
         builder.add_node("generate_time_series", self._generate_time_series_node)
         builder.add_node("root_cause_analysis", self._root_cause_analysis_node)
         builder.add_node("generate_narratives", self._generate_narratives_node)
+        builder.add_node("generate_recommendations", self._generate_recommendations_node)
         builder.add_node("prepare_dashboard_data", self._prepare_dashboard_data_node)
         builder.add_node("error_handler", self._error_handler_node)
         
@@ -99,7 +105,8 @@ class FinancialWorkflow:
         builder.add_edge("calculate_income_metrics", "generate_time_series")
         builder.add_edge("generate_time_series", "root_cause_analysis")
         builder.add_edge("root_cause_analysis", "generate_narratives")
-        builder.add_edge("generate_narratives", "prepare_dashboard_data")
+        builder.add_edge("generate_narratives", "generate_recommendations")
+        builder.add_edge("generate_recommendations", "prepare_dashboard_data")
         builder.add_edge("prepare_dashboard_data", END)
         builder.add_edge("error_handler", END)
         
@@ -311,6 +318,113 @@ class FinancialWorkflow:
                 "error_message": f"Narrative generation failed: {str(e)}"
             }
     
+    def _generate_recommendations_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
+        """Generate intelligent recommendations using the Advisor Agent"""
+        try:
+            logger.info("Starting recommendation generation with FinancialAdvisorAgent")
+            
+            # Get the analysis data and narratives
+            cash_flow_root_cause = state["cash_flow_root_cause"]
+            revenue_root_cause = state["revenue_root_cause"]
+            expenses_root_cause = state["expenses_root_cause"]
+            income_root_cause = state["income_root_cause"]
+            financial_narratives = state["financial_narratives"]
+            
+            # Prepare analysis data for each metric
+            revenue_analysis_data = {
+                "current_period_value": revenue_root_cause.current_period_value,
+                "previous_period_value": revenue_root_cause.previous_period_value,
+                "total_change": revenue_root_cause.total_change,
+                "change_percent": revenue_root_cause.change_percent,
+                "trend_direction": revenue_root_cause.trend_direction,
+                "top_contributing_factors": [
+                    {
+                        "factor_name": factor.factor_name,
+                        "factor_type": factor.factor_type,
+                        "change": factor.change,
+                        "change_percent": factor.change_percent,
+                        "impact_score": factor.impact_score
+                    }
+                    for factor in revenue_root_cause.top_contributing_factors
+                ]
+            }
+            
+            expenses_analysis_data = {
+                "current_period_value": expenses_root_cause.current_period_value,
+                "previous_period_value": expenses_root_cause.previous_period_value,
+                "total_change": expenses_root_cause.total_change,
+                "change_percent": expenses_root_cause.change_percent,
+                "trend_direction": expenses_root_cause.trend_direction,
+                "top_contributing_factors": [
+                    {
+                        "factor_name": factor.factor_name,
+                        "factor_type": factor.factor_type,
+                        "change": factor.change,
+                        "change_percent": factor.change_percent,
+                        "impact_score": factor.impact_score
+                    }
+                    for factor in expenses_root_cause.top_contributing_factors
+                ]
+            }
+            
+            income_analysis_data = {
+                "current_period_value": income_root_cause.current_period_value,
+                "previous_period_value": income_root_cause.previous_period_value,
+                "total_change": income_root_cause.total_change,
+                "change_percent": income_root_cause.change_percent,
+                "trend_direction": income_root_cause.trend_direction,
+                "top_contributing_factors": [
+                    {
+                        "factor_name": factor.factor_name,
+                        "factor_type": factor.factor_type,
+                        "change": factor.change,
+                        "change_percent": factor.change_percent,
+                        "impact_score": factor.impact_score
+                    }
+                    for factor in income_root_cause.top_contributing_factors
+                ]
+            }
+            
+            cash_flow_analysis_data = {
+                "current_period_value": cash_flow_root_cause.current_period_value,
+                "previous_period_value": cash_flow_root_cause.previous_period_value,
+                "total_change": cash_flow_root_cause.total_change,
+                "change_percent": cash_flow_root_cause.change_percent,
+                "trend_direction": cash_flow_root_cause.trend_direction,
+                "top_contributing_factors": [
+                    {
+                        "factor_name": factor.factor_name,
+                        "factor_type": factor.factor_type,
+                        "change": factor.change,
+                        "change_percent": factor.change_percent,
+                        "impact_score": factor.impact_score
+                    }
+                    for factor in cash_flow_root_cause.top_contributing_factors
+                ]
+            }
+            
+            # Generate recommendations using the Advisor Agent
+            logger.debug("Calling FinancialAdvisorAgent.generate_bulk_recommendations")
+            advisor_recommendations = self.advisor_agent.generate_bulk_recommendations(
+                revenue_analysis_data,
+                expenses_analysis_data,
+                income_analysis_data,
+                cash_flow_analysis_data,
+                financial_narratives
+            )
+            
+            logger.info("Recommendation generation completed successfully")
+            return {
+                **state,
+                "advisor_recommendations": advisor_recommendations
+            }
+            
+        except Exception as e:
+            logger.error(f"Recommendation generation failed: {str(e)}", exc_info=True)
+            return {
+                **state,
+                "error_message": f"Recommendation generation failed: {str(e)}"
+            }
     
     def _prepare_dashboard_data_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
         """Prepare final dashboard data structure"""
@@ -331,6 +445,7 @@ class FinancialWorkflow:
             income_root_cause = state["income_root_cause"]
             
             narratives = state["financial_narratives"]
+            advisor_recommendations = state.get("advisor_recommendations", {})
             
             dashboard_data = {
                 "tiles": {
@@ -382,7 +497,7 @@ class FinancialWorkflow:
                             }
                             for factor in revenue_root_cause.top_contributing_factors
                         ],
-                        "recommendations": revenue_root_cause.recommendations
+                        "recommendations": [advisor_recommendations.get("revenue", {}).get("recommendation", "No recommendations available")]
                     },
                     "expenses": {
                         "metric": expenses_root_cause.metric,
@@ -399,7 +514,7 @@ class FinancialWorkflow:
                             }
                             for factor in expenses_root_cause.top_contributing_factors
                         ],
-                        "recommendations": expenses_root_cause.recommendations
+                        "recommendations": [advisor_recommendations.get("expenses", {}).get("recommendation", "No recommendations available")]
                     },
                     "income": {
                         "metric": income_root_cause.metric,
@@ -416,7 +531,7 @@ class FinancialWorkflow:
                             }
                             for factor in income_root_cause.top_contributing_factors
                         ],
-                        "recommendations": income_root_cause.recommendations
+                        "recommendations": [advisor_recommendations.get("income", {}).get("recommendation", "No recommendations available")]
                     },
                     "free_cash_flow": {
                         "metric": cash_flow_root_cause.metric,
@@ -433,7 +548,7 @@ class FinancialWorkflow:
                             }
                             for factor in cash_flow_root_cause.top_contributing_factors
                         ],
-                        "recommendations": cash_flow_root_cause.recommendations
+                        "recommendations": [advisor_recommendations.get("free_cash_flow", {}).get("recommendation", "No recommendations available")]
                     }
                 },
                 "insights": {
@@ -525,6 +640,7 @@ class FinancialWorkflow:
             "expenses_root_cause": None,
             "income_root_cause": None,
             "financial_narratives": None,
+            "advisor_recommendations": None,
             "dashboard_data": {},
             "error_message": ""
         }
