@@ -2,6 +2,7 @@
 Financial Advisor Agent for generating intelligent recommendations using LLM
 """
 import logging
+import concurrent.futures
 from typing import Dict, List, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -34,7 +35,7 @@ class AdvisorRecommendation(BaseModel):
 
 
 class FinancialAdvisorAgent:
-    """LLM-based Financial Advisor Agent for generating intelligent recommendations"""
+    """LLM-based Financial Advisor Agent for generating intelligent recommendations with concurrent execution"""
     
     def __init__(self, openai_api_key: str):
         logger.info("Initializing FinancialAdvisorAgent")
@@ -156,10 +157,8 @@ Based on this analysis, provide specific, actionable recommendations for how the
                                     profitability_analysis: Dict[str, Any],
                                     free_cash_flow_analysis: Dict[str, Any],
                                     narratives: Dict[str, Any]) -> Dict[str, AdvisorRecommendation]:
-        """Generate recommendations for all metrics at once"""
-        logger.info("Generating bulk recommendations for all metrics")
-        
-        recommendations = {}
+        """Generate recommendations for all metrics concurrently"""
+        logger.info("Generating bulk recommendations for all metrics concurrently")
         
         # Define the metrics to analyze
         metrics_data = {
@@ -169,43 +168,64 @@ Based on this analysis, provide specific, actionable recommendations for how the
             "Free Cash Flow": free_cash_flow_analysis
         }
         
+        # Prepare analysis inputs for concurrent execution
+        analysis_inputs = []
         for metric_name, analysis_data in metrics_data.items():
-            try:
-                # Map metric names to narrative keys
-                narrative_key = {
-                    "Revenue": "revenue",
-                    "Expenses": "expenses", 
-                    "Profitability": "income",  # Note: profitability maps to income narrative
-                    "Free Cash Flow": "free_cash_flow"
-                }.get(metric_name, metric_name.lower())
-                
-                # Create input for the advisor
-                analysis_input = MetricAnalysisInput(
-                    metric_name=metric_name,
-                    current_value=analysis_data.get('current_period_value', 0),
-                    previous_value=analysis_data.get('previous_period_value', 0),
-                    change=analysis_data.get('total_change', 0),
-                    change_percent=analysis_data.get('change_percent', 0),
-                    trend_direction=analysis_data.get('trend_direction', 'stable'),
-                    time_series_data=analysis_data.get('time_series_values', []),
-                    time_series_dates=analysis_data.get('time_series_dates', []),
-                    top_contributing_factors=analysis_data.get('top_contributing_factors', []),
-                    narrative=getattr(narratives.get(narrative_key), 'narrative', f"Analysis for {metric_name}") if narratives.get(narrative_key) else f"Analysis for {metric_name}"
-                )
-                
-                # Generate recommendation
-                recommendation = self.generate_recommendation(analysis_input)
-                recommendations[narrative_key] = recommendation
-                
-            except Exception as e:
-                logger.error(f"Error generating recommendation for {metric_name}: {str(e)}")
-                # Add fallback recommendation
-                recommendations[narrative_key] = AdvisorRecommendation(
-                    metric=metric_name,
-                    recommendation=f"Continue monitoring {metric_name.lower()} performance and consider consulting with a financial advisor for detailed guidance.",
-                    priority_level="Medium",
-                    implementation_timeframe="Short-term (1-3 months)"
-                )
+            # Map metric names to narrative keys
+            narrative_key = {
+                "Revenue": "revenue",
+                "Expenses": "expenses", 
+                "Profitability": "income",  # Note: profitability maps to income narrative
+                "Free Cash Flow": "free_cash_flow"
+            }.get(metric_name, metric_name.lower())
+            
+            # Create input for the advisor
+            analysis_input = MetricAnalysisInput(
+                metric_name=metric_name,
+                current_value=analysis_data.get('current_period_value', 0),
+                previous_value=analysis_data.get('previous_period_value', 0),
+                change=analysis_data.get('total_change', 0),
+                change_percent=analysis_data.get('change_percent', 0),
+                trend_direction=analysis_data.get('trend_direction', 'stable'),
+                time_series_data=analysis_data.get('time_series_values', []),
+                time_series_dates=analysis_data.get('time_series_dates', []),
+                top_contributing_factors=analysis_data.get('top_contributing_factors', []),
+                narrative=getattr(narratives.get(narrative_key), 'narrative', f"Analysis for {metric_name}") if narratives.get(narrative_key) else f"Analysis for {metric_name}"
+            )
+            analysis_inputs.append((narrative_key, analysis_input))
         
-        logger.info(f"Generated {len(recommendations)} recommendations successfully")
+        # Use ThreadPoolExecutor for concurrent execution
+        recommendations = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            # Submit all recommendation generation tasks
+            future_to_metric = {
+                executor.submit(self.generate_recommendation, analysis_input): narrative_key 
+                for narrative_key, analysis_input in analysis_inputs
+            }
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_metric):
+                narrative_key = future_to_metric[future]
+                try:
+                    recommendation = future.result()
+                    recommendations[narrative_key] = recommendation
+                    logger.debug(f"Completed recommendation generation for {narrative_key}")
+                except Exception as e:
+                    logger.error(f"Error generating recommendation for {narrative_key}: {str(e)}")
+                    # Add fallback recommendation
+                    metric_name = next((name for name, key in {
+                        "Revenue": "revenue",
+                        "Expenses": "expenses", 
+                        "Profitability": "income",
+                        "Free Cash Flow": "free_cash_flow"
+                    }.items() if key == narrative_key), narrative_key.title())
+                    
+                    recommendations[narrative_key] = AdvisorRecommendation(
+                        metric=metric_name,
+                        recommendation=f"Continue monitoring {metric_name.lower()} performance and consider consulting with a financial advisor for detailed guidance.",
+                        priority_level="Medium",
+                        implementation_timeframe="Short-term (1-3 months)"
+                    )
+        
+        logger.info(f"Generated {len(recommendations)} recommendations successfully using concurrent execution")
         return recommendations

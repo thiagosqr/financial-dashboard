@@ -3,6 +3,7 @@ LangGraph workflow for financial analysis multi-agent system
 """
 import os
 import logging
+import concurrent.futures
 from typing import Dict, List, Any, TypedDict, Annotated
 import operator
 from langgraph.graph import END, START, StateGraph
@@ -77,10 +78,7 @@ class FinancialWorkflow:
         # Add nodes
         builder.add_node("data_ingest", self._data_ingest_node)
         builder.add_node("categorize_transactions", self._categorize_transactions_node)
-        builder.add_node("calculate_cash_flow_metrics", self._calculate_cash_flow_metrics_node)
-        builder.add_node("calculate_revenue_metrics", self._calculate_revenue_metrics_node)
-        builder.add_node("calculate_expenses_metrics", self._calculate_expenses_metrics_node)
-        builder.add_node("calculate_income_metrics", self._calculate_income_metrics_node)
+        builder.add_node("calculate_metrics_concurrent", self._calculate_metrics_concurrent_node)
         builder.add_node("generate_time_series", self._generate_time_series_node)
         builder.add_node("root_cause_analysis", self._root_cause_analysis_node)
         builder.add_node("generate_narratives", self._generate_narratives_node)
@@ -94,15 +92,12 @@ class FinancialWorkflow:
             "data_ingest",
             self._check_data_ingest_success,
             {
-                "success": "calculate_cash_flow_metrics",
+                "success": "calculate_metrics_concurrent",
                 "error": "error_handler"
             }
         )
-        # Parallel execution of metric calculations
-        builder.add_edge("calculate_cash_flow_metrics", "calculate_revenue_metrics")
-        builder.add_edge("calculate_revenue_metrics", "calculate_expenses_metrics")
-        builder.add_edge("calculate_expenses_metrics", "calculate_income_metrics")
-        builder.add_edge("calculate_income_metrics", "generate_time_series")
+        # Concurrent execution of all metric calculations
+        builder.add_edge("calculate_metrics_concurrent", "generate_time_series")
         builder.add_edge("generate_time_series", "root_cause_analysis")
         builder.add_edge("root_cause_analysis", "generate_narratives")
         builder.add_edge("generate_narratives", "generate_recommendations")
@@ -151,127 +146,163 @@ class FinancialWorkflow:
                 "error_message": f"Transaction categorization failed: {str(e)}"
             }
     
-    def _calculate_cash_flow_metrics_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
-        """Calculate cash flow metrics using specialized agent"""
+    def _calculate_metrics_concurrent_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
+        """Calculate all metrics concurrently using specialized agents"""
+        logger.info("Starting concurrent metric calculations")
         try:
-            cash_flow_comparison = self.cash_flow_agent.calculate_month_over_month_comparison(
-                state["transactions"]
-            )
+            # Define metric calculation tasks
+            def calculate_cash_flow():
+                return self.cash_flow_agent.calculate_month_over_month_comparison(state["transactions"])
             
+            def calculate_revenue():
+                return self.revenue_agent.calculate_month_over_month_comparison(state["transactions"])
+            
+            def calculate_expenses():
+                return self.expenses_agent.calculate_month_over_month_comparison(state["transactions"])
+            
+            def calculate_income():
+                return self.income_agent.calculate_month_over_month_comparison(state["transactions"])
+            
+            # Execute all calculations concurrently
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                # Submit all tasks
+                future_to_metric = {
+                    executor.submit(calculate_cash_flow): "cash_flow_comparison",
+                    executor.submit(calculate_revenue): "revenue_comparison",
+                    executor.submit(calculate_expenses): "expenses_comparison",
+                    executor.submit(calculate_income): "income_comparison"
+                }
+                
+                # Collect results
+                results = {}
+                for future in concurrent.futures.as_completed(future_to_metric):
+                    metric_name = future_to_metric[future]
+                    try:
+                        result = future.result()
+                        results[metric_name] = result
+                        logger.debug(f"Completed {metric_name} calculation")
+                    except Exception as e:
+                        logger.error(f"Error calculating {metric_name}: {str(e)}")
+                        raise e
+            
+            logger.info("Concurrent metric calculations completed successfully")
             return {
                 **state,
-                "cash_flow_comparison": cash_flow_comparison
+                "cash_flow_comparison": results["cash_flow_comparison"],
+                "revenue_comparison": results["revenue_comparison"],
+                "expenses_comparison": results["expenses_comparison"],
+                "income_comparison": results["income_comparison"]
             }
         except Exception as e:
+            logger.error(f"Concurrent metrics calculation failed: {str(e)}")
             return {
                 **state,
-                "error_message": f"Cash flow metrics calculation failed: {str(e)}"
-            }
-    
-    def _calculate_revenue_metrics_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
-        """Calculate revenue metrics using specialized agent"""
-        try:
-            revenue_comparison = self.revenue_agent.calculate_month_over_month_comparison(
-                state["transactions"]
-            )
-            
-            return {
-                **state,
-                "revenue_comparison": revenue_comparison
-            }
-        except Exception as e:
-            return {
-                **state,
-                "error_message": f"Revenue metrics calculation failed: {str(e)}"
-            }
-    
-    def _calculate_expenses_metrics_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
-        """Calculate expenses metrics using specialized agent"""
-        try:
-            expenses_comparison = self.expenses_agent.calculate_month_over_month_comparison(
-                state["transactions"]
-            )
-            
-            return {
-                **state,
-                "expenses_comparison": expenses_comparison
-            }
-        except Exception as e:
-            return {
-                **state,
-                "error_message": f"Expenses metrics calculation failed: {str(e)}"
-            }
-    
-    def _calculate_income_metrics_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
-        """Calculate income metrics using specialized agent"""
-        try:
-            income_comparison = self.income_agent.calculate_month_over_month_comparison(
-                state["transactions"]
-            )
-            
-            return {
-                **state,
-                "income_comparison": income_comparison
-            }
-        except Exception as e:
-            return {
-                **state,
-                "error_message": f"Income metrics calculation failed: {str(e)}"
+                "error_message": f"Concurrent metrics calculation failed: {str(e)}"
             }
     
     def _generate_time_series_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
-        """Generate time series data for charts using specialized agents"""
+        """Generate time series data for charts using specialized agents concurrently"""
+        logger.info("Starting concurrent time series generation")
         try:
-            cash_flow_time_series = self.cash_flow_agent.generate_time_series_data(
-                state["transactions"]
-            )
-            revenue_time_series = self.revenue_agent.generate_time_series_data(
-                state["transactions"]
-            )
-            expenses_time_series = self.expenses_agent.generate_time_series_data(
-                state["transactions"]
-            )
-            income_time_series = self.income_agent.generate_time_series_data(
-                state["transactions"]
-            )
+            # Define time series generation tasks
+            def generate_cash_flow_time_series():
+                return self.cash_flow_agent.generate_time_series_data(state["transactions"])
             
+            def generate_revenue_time_series():
+                return self.revenue_agent.generate_time_series_data(state["transactions"])
+            
+            def generate_expenses_time_series():
+                return self.expenses_agent.generate_time_series_data(state["transactions"])
+            
+            def generate_income_time_series():
+                return self.income_agent.generate_time_series_data(state["transactions"])
+            
+            # Execute all time series generation concurrently
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                # Submit all tasks
+                future_to_metric = {
+                    executor.submit(generate_cash_flow_time_series): "cash_flow_time_series",
+                    executor.submit(generate_revenue_time_series): "revenue_time_series",
+                    executor.submit(generate_expenses_time_series): "expenses_time_series",
+                    executor.submit(generate_income_time_series): "income_time_series"
+                }
+                
+                # Collect results
+                results = {}
+                for future in concurrent.futures.as_completed(future_to_metric):
+                    metric_name = future_to_metric[future]
+                    try:
+                        result = future.result()
+                        results[metric_name] = result
+                        logger.debug(f"Completed {metric_name} time series generation")
+                    except Exception as e:
+                        logger.error(f"Error generating {metric_name} time series: {str(e)}")
+                        raise e
+            
+            logger.info("Concurrent time series generation completed successfully")
             return {
                 **state,
-                "cash_flow_time_series": cash_flow_time_series,
-                "revenue_time_series": revenue_time_series,
-                "expenses_time_series": expenses_time_series,
-                "income_time_series": income_time_series
+                "cash_flow_time_series": results["cash_flow_time_series"],
+                "revenue_time_series": results["revenue_time_series"],
+                "expenses_time_series": results["expenses_time_series"],
+                "income_time_series": results["income_time_series"]
             }
         except Exception as e:
+            logger.error(f"Concurrent time series generation failed: {str(e)}")
             return {
                 **state,
                 "error_message": f"Time series generation failed: {str(e)}"
             }
     
     def _root_cause_analysis_node(self, state: FinancialWorkflowState) -> FinancialWorkflowState:
-        """Perform root cause analysis using specialized agents"""
+        """Perform root cause analysis using specialized agents concurrently"""
+        logger.info("Starting concurrent root cause analysis")
         try:
-            cash_flow_root_cause = self.cash_flow_agent.analyze_cash_flow_root_cause(
-                state["transactions"]
-            )
-            revenue_root_cause = self.revenue_agent.analyze_revenue_root_cause(
-                state["transactions"]
-            )
-            expenses_root_cause = self.expenses_agent.analyze_expenses_root_cause(
-                state["transactions"]
-            )
-            income_root_cause = self.income_agent.analyze_income_root_cause(
-                state["transactions"]
-            )
+            # Define root cause analysis tasks
+            def analyze_cash_flow_root_cause():
+                return self.cash_flow_agent.analyze_cash_flow_root_cause(state["transactions"])
             
+            def analyze_revenue_root_cause():
+                return self.revenue_agent.analyze_revenue_root_cause(state["transactions"])
+            
+            def analyze_expenses_root_cause():
+                return self.expenses_agent.analyze_expenses_root_cause(state["transactions"])
+            
+            def analyze_income_root_cause():
+                return self.income_agent.analyze_income_root_cause(state["transactions"])
+            
+            # Execute all root cause analyses concurrently
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                # Submit all tasks
+                future_to_metric = {
+                    executor.submit(analyze_cash_flow_root_cause): "cash_flow_root_cause",
+                    executor.submit(analyze_revenue_root_cause): "revenue_root_cause",
+                    executor.submit(analyze_expenses_root_cause): "expenses_root_cause",
+                    executor.submit(analyze_income_root_cause): "income_root_cause"
+                }
+                
+                # Collect results
+                results = {}
+                for future in concurrent.futures.as_completed(future_to_metric):
+                    metric_name = future_to_metric[future]
+                    try:
+                        result = future.result()
+                        results[metric_name] = result
+                        logger.debug(f"Completed {metric_name} root cause analysis")
+                    except Exception as e:
+                        logger.error(f"Error performing {metric_name} root cause analysis: {str(e)}")
+                        raise e
+            
+            logger.info("Concurrent root cause analysis completed successfully")
             return {
                 **state,
-                "cash_flow_root_cause": cash_flow_root_cause,
-                "revenue_root_cause": revenue_root_cause,
-                "expenses_root_cause": expenses_root_cause,
-                "income_root_cause": income_root_cause
+                "cash_flow_root_cause": results["cash_flow_root_cause"],
+                "revenue_root_cause": results["revenue_root_cause"],
+                "expenses_root_cause": results["expenses_root_cause"],
+                "income_root_cause": results["income_root_cause"]
             }
         except Exception as e:
+            logger.error(f"Concurrent root cause analysis failed: {str(e)}")
             return {
                 **state,
                 "error_message": f"Root cause analysis failed: {str(e)}"

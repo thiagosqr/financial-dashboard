@@ -2,6 +2,8 @@
 Data Storyteller Agent for generating financial narratives using OpenAI
 """
 import logging
+import asyncio
+import concurrent.futures
 from typing import Dict, List, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -29,7 +31,7 @@ class FinancialNarrative(BaseModel):
 
 
 class DataStorytellerAgent:
-    """Agent responsible for generating financial narratives using OpenAI"""
+    """Agent responsible for generating financial narratives using OpenAI with concurrent execution"""
     
     def __init__(self, openai_api_key: str):
         self.llm = ChatOpenAI(
@@ -110,37 +112,54 @@ Make it accessible to business stakeholders while maintaining financial accuracy
                                        cash_flow_analysis: CashFlowRootCauseAnalysis,
                                        overall_insights: List[str],
                                        priority_actions: List[str]) -> Dict[str, Any]:
-        """Generate comprehensive narratives for all metrics and overall business story"""
-        logger.info("Starting comprehensive narrative generation for all metrics")
+        """Generate comprehensive narratives for all metrics concurrently"""
+        logger.info("Starting concurrent comprehensive narrative generation for all metrics")
         logger.debug(f"Overall insights count: {len(overall_insights)}")
         logger.debug(f"Priority actions count: {len(priority_actions)}")
         
-        # Generate individual metric narratives
-        logger.debug("Generating revenue narrative")
-        revenue_narrative = self.generate_metric_narrative(revenue_analysis)
+        # Prepare all analysis data for concurrent execution
+        analyses = [
+            ("revenue", revenue_analysis),
+            ("expenses", expenses_analysis),
+            ("income", income_analysis),
+            ("free_cash_flow", cash_flow_analysis)
+        ]
         
-        logger.debug("Generating expenses narrative")
-        expenses_narrative = self.generate_metric_narrative(expenses_analysis)
+        # Use ThreadPoolExecutor for concurrent execution
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            # Submit all narrative generation tasks
+            future_to_metric = {
+                executor.submit(self.generate_metric_narrative, analysis): metric_name 
+                for metric_name, analysis in analyses
+            }
+            
+            # Collect results as they complete
+            narratives = {}
+            for future in concurrent.futures.as_completed(future_to_metric):
+                metric_name = future_to_metric[future]
+                try:
+                    narrative = future.result()
+                    narratives[metric_name] = narrative
+                    logger.debug(f"Completed narrative generation for {metric_name}")
+                except Exception as e:
+                    logger.error(f"Error generating narrative for {metric_name}: {str(e)}")
+                    # Use fallback narrative
+                    analyses_dict = dict(analyses)
+                    narratives[metric_name] = self._generate_fallback_narrative(analyses_dict[metric_name])
         
-        logger.debug("Generating income narrative")
-        income_narrative = self.generate_metric_narrative(income_analysis)
-        
-        logger.debug("Generating cash flow narrative")
-        cash_flow_narrative = self.generate_metric_narrative(cash_flow_analysis)
-        
-        # Generate overall business narrative
+        # Generate overall business narrative (this can be done concurrently too if needed)
         logger.debug("Generating overall business narrative")
         overall_narrative = self._generate_overall_business_narrative(
             revenue_analysis, expenses_analysis, income_analysis, cash_flow_analysis,
             overall_insights, priority_actions
         )
         
-        logger.info("Comprehensive narrative generation completed successfully")
+        logger.info("Concurrent comprehensive narrative generation completed successfully")
         return {
-            "revenue": revenue_narrative,
-            "expenses": expenses_narrative,
-            "income": income_narrative,
-            "free_cash_flow": cash_flow_narrative,
+            "revenue": narratives["revenue"],
+            "expenses": narratives["expenses"],
+            "income": narratives["income"],
+            "free_cash_flow": narratives["free_cash_flow"],
             "overall_business_story": overall_narrative,
             "priority_actions": priority_actions,
             "overall_insights": overall_insights
