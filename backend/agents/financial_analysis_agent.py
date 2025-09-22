@@ -657,51 +657,97 @@ class FinancialAnalysisAgent:
     
     def _analyze_free_cash_flow_root_cause(self, current_df: pd.DataFrame, previous_df: pd.DataFrame, 
                                           comparison: MonthlyComparison) -> RootCauseAnalysis:
-        """Analyze root causes for free cash flow changes"""
+        """Analyze root causes for free cash flow changes
+        
+        Free Cash Flow = Operating Cash Flow - Capital Expenditure
+        
+        This analysis:
+        1. First performs the current root cause analysis on Cash Flow from Operating Activities
+        2. Then adds Capex as an additional contributing factor
+        3. Compares Capex vs individual items and orders by biggest impact on FCF
+        """
         factors = []
         
-        # Free cash flow = Operating Cash Flow - Capital Expenditure
-        # Analyze operating cash flow components (inflows and outflows)
-        current_inflows = current_df[current_df['amount'] > 0]
-        previous_inflows = previous_df[previous_df['amount'] > 0]
-        current_outflows = current_df[current_df['amount'] < 0]
-        previous_outflows = previous_df[previous_df['amount'] < 0]
+        # Step 1: Analyze Operating Cash Flow components using the same logic as CashFlowAnalysisAgent
+        # This maintains the current root cause analysis rules for operating activities
         
-        # Analyze capital expenditure separately
+        # Separate revenue (inflows) and expenses (outflows) for operating cash flow analysis
+        current_revenue = current_df[current_df['category'].str.lower().isin(self.revenue_categories)]
+        previous_revenue = previous_df[previous_df['category'].str.lower().isin(self.revenue_categories)]
+        current_expenses = current_df[~current_df['category'].str.lower().isin(self.revenue_categories)]
+        previous_expenses = previous_df[~previous_df['category'].str.lower().isin(self.revenue_categories)]
+        
+        # Revenue impact factors (positive impact on free cash flow)
+        revenue_factors = self._analyze_by_category(current_revenue, previous_revenue, "category")
+        for factor in revenue_factors:
+            factor.factor_type = f"Operating Inflow - {factor.factor_type}"
+        factors.extend(revenue_factors)
+        
+        # Non-CapEx expense factors (negative impact on free cash flow)
+        # Exclude CapEx from operating expenses to avoid double counting
+        current_non_capex_expenses = current_expenses[~current_expenses.apply(
+            lambda row: self._is_capital_expenditure(row['category'], row['description']), axis=1)]
+        previous_non_capex_expenses = previous_expenses[~previous_expenses.apply(
+            lambda row: self._is_capital_expenditure(row['category'], row['description']), axis=1)]
+        
+        expense_factors = self._analyze_by_category(current_non_capex_expenses, previous_non_capex_expenses, "category")
+        for factor in expense_factors:
+            factor.factor_type = f"Operating Outflow - {factor.factor_type}"
+        factors.extend(expense_factors)
+        
+        # Step 2: Calculate and analyze Capital Expenditure as a separate contributing factor
         current_capex = current_df[current_df.apply(lambda row: self._is_capital_expenditure(row['category'], row['description']), axis=1)]
         previous_capex = previous_df[previous_df.apply(lambda row: self._is_capital_expenditure(row['category'], row['description']), axis=1)]
         
-        # Cash inflow factors (positive impact on free cash flow)
-        inflow_factors = self._analyze_by_category(current_inflows, previous_inflows, "category")
-        for factor in inflow_factors:
-            factor.factor_type = f"Cash Inflow - {factor.factor_type}"
-        factors.extend(inflow_factors)
+        # Calculate total CapEx change for comparison
+        current_total_capex = current_capex['amount'].abs().sum()
+        previous_total_capex = previous_capex['amount'].abs().sum()
+        capex_change = current_total_capex - previous_total_capex
         
-        # Cash outflow factors (negative impact on free cash flow, but exclude CapEx)
-        non_capex_outflows = current_outflows[~current_outflows.apply(lambda row: self._is_capital_expenditure(row['category'], row['description']), axis=1)]
-        prev_non_capex_outflows = previous_outflows[~previous_outflows.apply(lambda row: self._is_capital_expenditure(row['category'], row['description']), axis=1)]
+        # Add overall CapEx as a major factor
+        if abs(capex_change) > 0.01:  # Only if there's meaningful change
+            capex_change_percent = self._calculate_percentage_change(current_total_capex, previous_total_capex)
+            
+            # Calculate impact score for CapEx
+            total_fcf_change = abs(comparison.free_cash_flow_change)
+            capex_impact_score = (abs(capex_change) / total_fcf_change * 100) if total_fcf_change > 0 else 0
+            
+            overall_capex_factor = RootCauseFactor(
+                factor_type="Capital Expenditure - Total",
+                factor_name="Total CapEx",
+                current_value=current_total_capex,
+                previous_value=previous_total_capex,
+                change=-capex_change,  # Negative because CapEx reduces FCF
+                change_percent=capex_change_percent,
+                impact_score=capex_impact_score,
+                rank=0  # Will be set during ranking
+            )
+            factors.append(overall_capex_factor)
         
-        outflow_factors = self._analyze_by_category(non_capex_outflows, prev_non_capex_outflows, "category")
-        for factor in outflow_factors:
-            factor.factor_type = f"Operating Outflow - {factor.factor_type}"
-        factors.extend(outflow_factors)
-        
-        # Capital expenditure factors (negative impact on free cash flow)
+        # Analyze individual CapEx categories
         capex_factors = self._analyze_by_category(current_capex, previous_capex, "category")
         for factor in capex_factors:
             factor.factor_type = f"Capital Expenditure - {factor.factor_type}"
             factor.change = -abs(factor.change)  # CapEx reduces free cash flow
         factors.extend(capex_factors)
         
-        # Analyze by account
+        # Analyze CapEx by description for more granular insights
+        capex_desc_factors = self._analyze_by_description(current_capex, previous_capex, "description")
+        for factor in capex_desc_factors:
+            factor.factor_type = f"Capital Expenditure - {factor.factor_type}"
+            factor.change = -abs(factor.change)  # CapEx reduces free cash flow
+        factors.extend(capex_desc_factors)
+        
+        # Analyze by account for additional context
         account_factors = self._analyze_by_category(current_df, previous_df, "account")
         factors.extend(account_factors)
         
-        # Rank factors by impact
+        # Step 3: Rank all factors by their impact on Free Cash Flow
+        # This will compare Capex vs individual operating items by biggest impact
         ranked_factors = self._rank_factors_by_impact(factors, comparison.free_cash_flow_change)
         
-        # Generate analysis summary
-        summary = self._generate_free_cash_flow_analysis_summary(comparison, ranked_factors)
+        # Generate enhanced analysis summary
+        summary = self._generate_enhanced_fcf_analysis_summary(comparison, ranked_factors, capex_change)
         
         return RootCauseAnalysis(
             metric="Free Cash Flow",
@@ -710,7 +756,7 @@ class FinancialAnalysisAgent:
             total_change=comparison.free_cash_flow_change,
             change_percent=comparison.current_month.free_cash_flow_pct_change,
             trend_direction="increasing" if comparison.free_cash_flow_change > 0 else "decreasing" if comparison.free_cash_flow_change < 0 else "stable",
-            top_contributing_factors=ranked_factors[:5],  # Top 5 factors
+            top_contributing_factors=ranked_factors[:10],  # Top 10 factors to show more detail
             analysis_summary=summary
         )
     
@@ -867,6 +913,46 @@ class FinancialAnalysisAgent:
         if len(factors) > 1:
             secondary_factor = factors[1]
             summary += f" Secondary driver: {secondary_factor.factor_name} ({secondary_factor.impact_score:.1f}% impact)."
+        
+        return summary
+    
+    def _generate_enhanced_fcf_analysis_summary(self, comparison: MonthlyComparison, 
+                                              factors: List[RootCauseFactor], capex_change: float) -> str:
+        """Generate enhanced analysis summary for free cash flow with CapEx comparison"""
+        direction = "improved" if comparison.free_cash_flow_change > 0 else "declined" if comparison.free_cash_flow_change < 0 else "remained stable"
+        
+        if not factors:
+            return f"Free cash flow {direction} by {abs(comparison.free_cash_flow_change):,.2f} ({abs(comparison.current_month.free_cash_flow_pct_change):.1f}%) with no significant contributing factors identified."
+        
+        # Enhanced summary with CapEx context
+        summary = f"Free cash flow {direction} by {abs(comparison.free_cash_flow_change):,.2f} ({abs(comparison.current_month.free_cash_flow_pct_change):.1f}%). "
+        
+        # Highlight CapEx impact
+        capex_direction = "increased" if capex_change > 0 else "decreased" if capex_change < 0 else "remained stable"
+        if abs(capex_change) > 0.01:
+            summary += f"Capital expenditure {capex_direction} by {abs(capex_change):,.2f}. "
+        
+        # Find operating vs CapEx factors in top contributors
+        operating_factors = [f for f in factors if not f.factor_type.startswith("Capital Expenditure")]
+        capex_factors = [f for f in factors if f.factor_type.startswith("Capital Expenditure")]
+        
+        top_factor = factors[0]
+        summary += f"Primary driver: {top_factor.factor_name} ({top_factor.factor_type}) with {top_factor.impact_score:.1f}% impact."
+        
+        if len(factors) > 1:
+            secondary_factor = factors[1]
+            summary += f" Secondary driver: {secondary_factor.factor_name} ({secondary_factor.factor_type}) with {secondary_factor.impact_score:.1f}% impact."
+        
+        # Add comparison context between operating activities and CapEx
+        if operating_factors and capex_factors:
+            top_operating = operating_factors[0] if operating_factors else None
+            top_capex = capex_factors[0] if capex_factors else None
+            
+            if top_operating and top_capex:
+                if abs(top_capex.impact_score) > abs(top_operating.impact_score):
+                    summary += f" Capital expenditure had greater impact ({top_capex.impact_score:.1f}%) than operating activities ({top_operating.impact_score:.1f}%)."
+                else:
+                    summary += f" Operating activities had greater impact ({top_operating.impact_score:.1f}%) than capital expenditure ({top_capex.impact_score:.1f}%)."
         
         return summary
     

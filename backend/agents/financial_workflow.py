@@ -17,6 +17,7 @@ from agents.cash_flow_agent import CashFlowAnalysisAgent, CashFlowComparison, Ca
 from agents.revenue_agent import RevenueAnalysisAgent, RevenueComparison, RevenueTimeSeriesData, RevenueRootCauseAnalysis
 from agents.expenses_agent import ExpensesAnalysisAgent, ExpensesComparison, ExpensesTimeSeriesData, ExpensesRootCauseAnalysis
 from agents.income_agent import IncomeAnalysisAgent, IncomeComparison, IncomeTimeSeriesData, IncomeRootCauseAnalysis
+from agents.financial_analysis_agent import FinancialAnalysisAgent, RootCauseAnalysis
 from agents.data_storyteller_agent import DataStorytellerAgent
 from agents.advisor_agent import FinancialAdvisorAgent
 
@@ -41,6 +42,7 @@ class FinancialWorkflowState(TypedDict):
     revenue_root_cause: RevenueRootCauseAnalysis
     expenses_root_cause: ExpensesRootCauseAnalysis
     income_root_cause: IncomeRootCauseAnalysis
+    free_cash_flow_root_cause: RootCauseAnalysis
     financial_narratives: Dict[str, Any]
     advisor_recommendations: Dict[str, Any]
     dashboard_data: Dict[str, Any]
@@ -60,6 +62,7 @@ class FinancialWorkflow:
         self.revenue_agent = RevenueAnalysisAgent()
         self.expenses_agent = ExpensesAnalysisAgent()
         self.income_agent = IncomeAnalysisAgent()
+        self.financial_analysis_agent = FinancialAnalysisAgent()
         
         logger.debug("Creating DataStorytellerAgent")
         self.data_storyteller_agent = DataStorytellerAgent(openai_api_key)
@@ -271,14 +274,18 @@ class FinancialWorkflow:
             def analyze_income_root_cause():
                 return self.income_agent.analyze_income_root_cause(state["transactions"])
             
+            def analyze_free_cash_flow_root_cause():
+                return self.financial_analysis_agent.analyze_root_cause(state["transactions"], "Free Cash Flow")
+            
             # Execute all root cause analyses concurrently
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 # Submit all tasks
                 future_to_metric = {
                     executor.submit(analyze_cash_flow_root_cause): "cash_flow_root_cause",
                     executor.submit(analyze_revenue_root_cause): "revenue_root_cause",
                     executor.submit(analyze_expenses_root_cause): "expenses_root_cause",
-                    executor.submit(analyze_income_root_cause): "income_root_cause"
+                    executor.submit(analyze_income_root_cause): "income_root_cause",
+                    executor.submit(analyze_free_cash_flow_root_cause): "free_cash_flow_root_cause"
                 }
                 
                 # Collect results
@@ -299,7 +306,8 @@ class FinancialWorkflow:
                 "cash_flow_root_cause": results["cash_flow_root_cause"],
                 "revenue_root_cause": results["revenue_root_cause"],
                 "expenses_root_cause": results["expenses_root_cause"],
-                "income_root_cause": results["income_root_cause"]
+                "income_root_cause": results["income_root_cause"],
+                "free_cash_flow_root_cause": results["free_cash_flow_root_cause"]
             }
         except Exception as e:
             logger.error(f"Concurrent root cause analysis failed: {str(e)}")
@@ -474,6 +482,7 @@ class FinancialWorkflow:
             revenue_root_cause = state["revenue_root_cause"]
             expenses_root_cause = state["expenses_root_cause"]
             income_root_cause = state["income_root_cause"]
+            free_cash_flow_root_cause = state["free_cash_flow_root_cause"]
             
             narratives = state["financial_narratives"]
             advisor_recommendations = state.get("advisor_recommendations", {})
@@ -565,6 +574,23 @@ class FinancialWorkflow:
                         "recommendations": [getattr(advisor_recommendations.get("income"), "recommendation", "No recommendations available") if advisor_recommendations.get("income") else "No recommendations available"]
                     },
                     "free_cash_flow": {
+                        "metric": free_cash_flow_root_cause.metric,
+                        "trend_direction": free_cash_flow_root_cause.trend_direction,
+                        "analysis_summary": free_cash_flow_root_cause.analysis_summary,
+                        "top_factors": [
+                            {
+                                "factor_name": factor.factor_name,
+                                "factor_type": factor.factor_type,
+                                "change": factor.change,
+                                "change_percent": factor.change_percent,
+                                "impact_score": factor.impact_score,
+                                "rank": factor.rank
+                            }
+                            for factor in free_cash_flow_root_cause.top_contributing_factors
+                        ],
+                        "recommendations": [getattr(advisor_recommendations.get("free_cash_flow"), "recommendation", "No recommendations available") if advisor_recommendations.get("free_cash_flow") else "No recommendations available"]
+                    },
+                    "operating_cash_flow": {
                         "metric": cash_flow_root_cause.metric,
                         "trend_direction": cash_flow_root_cause.trend_direction,
                         "analysis_summary": cash_flow_root_cause.analysis_summary,
@@ -579,7 +605,7 @@ class FinancialWorkflow:
                             }
                             for factor in cash_flow_root_cause.top_contributing_factors
                         ],
-                        "recommendations": [getattr(advisor_recommendations.get("free_cash_flow"), "recommendation", "No recommendations available") if advisor_recommendations.get("free_cash_flow") else "No recommendations available"]
+                        "recommendations": [getattr(advisor_recommendations.get("cash_flow"), "recommendation", "No recommendations available") if advisor_recommendations.get("cash_flow") else "No recommendations available"]
                     }
                 },
                 "insights": {
