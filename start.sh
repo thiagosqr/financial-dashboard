@@ -5,6 +5,47 @@
 echo "🚀 Starting Financial Dashboard Multi-Agent System"
 echo "=================================================="
 
+# Load environment variables from .env file
+if [ -f ".env" ]; then
+    echo "📋 Loading environment variables from .env file..."
+    # Export variables from .env file, ignoring comments and empty lines
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Skip empty lines and comments
+        if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# ]]; then
+            # Remove leading/trailing whitespace
+            line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [[ -n "$line" ]]; then
+                export "$line"
+                echo "  ✓ Loaded: ${line%%=*}"
+            fi
+        fi
+    done < .env
+    echo "✅ Environment variables loaded successfully!"
+elif [ -f "backend/env_example.txt" ]; then
+    echo "⚠️  No .env file found, but env_example.txt exists."
+    echo "Please copy env_example.txt to .env and fill in your values:"
+    echo "cp backend/env_example.txt .env"
+    echo ""
+    read -p "Do you want to create .env from env_example.txt? (y/n): " create_env
+    if [[ "$create_env" =~ ^[Yy]$ ]]; then
+        cp backend/env_example.txt .env
+        echo "✅ Created .env file from template. Please edit it with your actual values."
+        echo "Press Enter to continue or Ctrl+C to edit the file first..."
+        read
+        # Load the newly created .env file
+        while IFS= read -r line || [ -n "$line" ]; do
+            if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# ]]; then
+                line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                if [[ -n "$line" ]]; then
+                    export "$line"
+                fi
+            fi
+        done < .env
+    fi
+else
+    echo "⚠️  No .env file found. Environment variables will need to be set manually."
+fi
+
 # Check if Python is installed
 if ! command -v python3 &> /dev/null; then
     echo "❌ Python 3 is required but not installed."
@@ -20,7 +61,7 @@ fi
 # Check if OpenAI API key is set
 if [ -z "$OPENAI_API_KEY" ]; then
     echo "⚠️  OPENAI_API_KEY environment variable is not set."
-    echo "Please set your OpenAI API key:"
+    echo "Please set your OpenAI API key in the .env file or:"
     echo "export OPENAI_API_KEY='your-api-key-here'"
     echo ""
     read -p "Enter your OpenAI API key: " api_key

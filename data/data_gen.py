@@ -166,7 +166,7 @@ account_type_map = {
 }
 
 # Generate synthetic transactions
-dates = pd.date_range(start="2023-01-01", end="2024-12-31", freq="D")
+dates = pd.date_range(start="2023-07-01", end="2025-06-30", freq="D")
 n_samples = 3000
 sampled_dates = np.random.choice(dates, n_samples)
 
@@ -223,7 +223,7 @@ df["Balance"] = df.groupby("Category")["Net Activity"].cumsum() + df["Open"]
 df = df.sort_values("Date").reset_index(drop=True)
 
 # Save
-df.to_csv("Synthetic_Bakery_GeneralLedger_test.csv", index=False)
+df.to_csv("Synthetic_Bakery_GeneralLedger_prod.csv", index=False)
 
 print("✅ Synthetic Bakery General Ledger CSV created successfully!")
 print(df.head())
